@@ -1,0 +1,15 @@
+output/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Ignore audio files people drop into input/
+input/*.wav
+input/*.mp3
+input/*.m4a
+input/*.flac
+input/*.ogg
+
+# Keep the directories themselves
+!input/.gitkeep
+!output/.gitkeep

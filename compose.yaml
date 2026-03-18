@@ -1,0 +1,13 @@
+services:
+  transcribe:
+    build: .
+    volumes:
+      - ./input:/input:ro
+      - ./output:/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
