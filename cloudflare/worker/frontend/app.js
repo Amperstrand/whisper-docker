@@ -3,6 +3,8 @@
 
   var pollInterval = null;
   var currentJobId = null;
+  var HISTORY_KEY = "whisper-jobs";
+  var MAX_HISTORY = 20;
 
   // ---------------------------------------------------------------------------
   // Theme
@@ -35,6 +37,10 @@
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   }
 
+  function shortId(id) {
+    return id.substring(0, 8) + "...";
+  }
+
   function showToast(msg) {
     var t = $("#toast");
     t.textContent = msg;
@@ -60,6 +66,90 @@
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Job History (localStorage)
+  // ---------------------------------------------------------------------------
+
+  function getHistory() {
+    try {
+      var data = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (!Array.isArray(data)) return [];
+      return data;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory(jobs) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(jobs.slice(0, MAX_HISTORY)));
+    } catch (e) {
+      // localStorage full or unavailable — silent
+    }
+  }
+
+  function addToHistory(id, filename) {
+    var jobs = getHistory();
+    var entry = { id: id, filename: filename, timestamp: Date.now() };
+    var idx = jobs.findIndex(function (j) { return j.id === id; });
+    if (idx !== -1) jobs.splice(idx, 1);
+    jobs.unshift(entry);
+    saveHistory(jobs);
+    renderHistory();
+  }
+
+  function removeFromHistory(id) {
+    var jobs = getHistory().filter(function (j) { return j.id !== id; });
+    saveHistory(jobs);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var container = $("#history-list");
+    var jobs = getHistory();
+
+    if (jobs.length === 0) {
+      container.classList.add("hidden");
+      return;
+    }
+
+    container.classList.remove("hidden");
+    container.innerHTML = "";
+
+    jobs.forEach(function (job) {
+      var item = document.createElement("div");
+      item.className = "history-item";
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("title", job.id);
+
+      var timeStr = new Date(job.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      item.innerHTML =
+        '<span class="history-filename">' + escapeHtml(job.filename) + "</span>" +
+        '<span class="history-meta"><code>' + shortId(job.id) + "</code> &middot; " + timeStr + "</span>";
+
+      item.addEventListener("click", function () {
+        showStatus({ id: job.id, original_filename: job.filename });
+      });
+
+      item.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          showStatus({ id: job.id, original_filename: job.filename });
+        }
+      });
+
+      container.appendChild(item);
+    });
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
   }
 
   // ---------------------------------------------------------------------------
@@ -156,6 +246,13 @@
         var data = JSON.parse(xhr.responseText);
         progressFill.style.width = "100%";
         progressText.textContent = "Uploaded!";
+        addToHistory(data.id, data.original_filename);
+        showStatus(data);
+      } else if (xhr.status === 200) {
+        var data = JSON.parse(xhr.responseText);
+        progressFill.style.width = "100%";
+        progressText.textContent = "Existing job found!";
+        addToHistory(data.id, data.original_filename);
         showStatus(data);
       } else {
         var err = JSON.parse(xhr.responseText);
@@ -183,9 +280,10 @@
     $("#upload-section").classList.add("hidden");
     $("#status-section").classList.remove("hidden");
     $("#results-section").classList.add("hidden");
+    $("#error-display").classList.add("hidden");
 
     $("#job-id").textContent = data.id;
-    $("#job-filename").textContent = data.original_filename;
+    $("#job-filename").textContent = data.original_filename || "unknown";
 
     startPolling(data.id);
   }
@@ -316,6 +414,7 @@
       fetch("/api/jobs/" + currentJobId, { method: "DELETE" })
         .then(function (r) { return r.json(); })
         .then(function () {
+          removeFromHistory(currentJobId);
           showToast("Job deleted");
           $("#new-job-btn").click();
         })
@@ -333,6 +432,26 @@
   initUpload();
   initTabs();
   initResultActions();
+  renderHistory();
+
+  // Resume last active job on page load
+  (function resumeLastJob() {
+    var history = getHistory();
+    if (history.length === 0) return;
+
+    // Check the most recent job — if it's pending/processing, resume polling
+    var last = history[0];
+    fetch("/api/jobs/" + last.id)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.job && (data.job.status === "pending" || data.job.status === "processing")) {
+          showStatus({ id: data.job.id, original_filename: data.job.original_filename });
+        }
+      })
+      .catch(function () {
+        // job may have been deleted — ignore
+      });
+  })();
 
   $("#theme-toggle").addEventListener("click", toggleTheme);
 })();

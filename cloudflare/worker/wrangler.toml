@@ -3,8 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+account_id = "b8b395a6029fc23bcc4f4ac31fcd1f1c"
+
+# Custom domain
+routes = [
+  { pattern = "listen.silent.energy", custom_domain = true }
+]
+
 [vars]
-CORS_ORIGIN = "*"
+CORS_ORIGIN = "https://listen.silent.energy"
 
 # Import static assets as text modules
 [[rules]]
@@ -12,7 +19,7 @@ type = "Text"
 globs = ["**/*.html", "**/*.css", "**/*.js"]
 fallthrough = true
 
-# R2 bucket binding (name must match R2 bucket name)
+# R2 bucket binding
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "whisper-transcriptions"
@@ -21,4 +28,4 @@ bucket_name = "whisper-transcriptions"
 [[d1_databases]]
 binding = "DB"
 database_name = "whisper-transcriptions"
-database_id = "PLACEHOLDER"
+database_id = "5cc56700-c514-4456-9dc9-8ca589753ac6"

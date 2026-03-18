@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -114,13 +115,10 @@ def download_audio(job_id: str) -> tuple[str, Path]:
     except Exception as exc:
         raise RuntimeError(f"Failed to download audio: {exc}") from exc
 
-    content_disp = resp.headers.get("Content-Disposition", "")
-    filename = "audio.wav"
-    if "filename=" in content_disp:
-        filename = content_disp.split("filename=")[1].strip('"')
-
+    safe_filename = f"{job_id}.wav"
     tmp_dir = Path(tempfile.mkdtemp(prefix=f"whisper-{job_id[:8]}-"))
-    audio_path = tmp_dir / filename
+    os.chmod(tmp_dir, stat.S_IRWXU)
+    audio_path = tmp_dir / safe_filename
     total = 0
     with open(audio_path, "wb") as f:
         for chunk in resp.iter_content(chunk_size=8192):
@@ -128,9 +126,10 @@ def download_audio(job_id: str) -> tuple[str, Path]:
                 raise RuntimeError("Shutdown requested during download")
             f.write(chunk)
             total += len(chunk)
+    os.chmod(audio_path, stat.S_IRUSR | stat.S_IWUSR)
 
-    log.info("Downloaded %s (%d bytes) to %s", filename, total, tmp_dir)
-    return filename, tmp_dir
+    log.info("Downloaded %s (%d bytes) to %s", safe_filename, total, tmp_dir)
+    return safe_filename, tmp_dir
 
 
 def transcribe_docker(input_path: Path, output_dir: Path) -> None:
@@ -224,7 +223,7 @@ def process_job(job: dict) -> None:
         _filename, tmp_dir = download_audio(job_id)
         audio_path = list(Path(tmp_dir).iterdir())[0]
         output_dir = Path(tmp_dir) / "output"
-        output_dir.mkdir()
+        output_dir.mkdir(mode=0o700)
 
         if CONFIG["mode"] == "docker":
             transcribe_docker(audio_path, output_dir)
