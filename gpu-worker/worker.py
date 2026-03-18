@@ -196,10 +196,13 @@ def transcribe_docker(input_path: Path, output_dir: Path) -> None:
         raise RuntimeError(f"Dockerfile not found at {dockerfile}")
 
     image_name = "whisper-docker-transcribe"
+    model_cache_dir = Path.home() / ".whisper-model-cache"
+    model_cache_dir.mkdir(mode=0o755, exist_ok=True)
 
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--gpus", "all",
+            "-v", f"{model_cache_dir}:/home/ubuntu/.cache/huggingface:rw",
             "-v", f"{input_path}:/input/{input_path.name}:ro",
             "-v", f"{output_dir}:/output:rw",
             image_name,
