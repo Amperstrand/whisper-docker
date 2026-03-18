@@ -92,7 +92,7 @@ test_site() {
     fi
 
     local app_js
-    app_js=$(echo "$html" | grep -oP '_app/immutable/entry/app\.\w+\.js' | head -1)
+    app_js=$(echo "$html" | grep -oP '_app/immutable/entry/app\.[\w-]+\.js' | head -1)
     if [ -n "$app_js" ]; then
         local app_content
         app_content=$(curl -s "$url/$app_js")

@@ -4,7 +4,10 @@
   let { segments, audioEl }: { segments: Segment[]; audioEl?: HTMLAudioElement | null } = $props();
 
   let activeWordIdx = $state(-1);
+  let activeSegIdx = $state(-1);
+  let wordProgress = $state(0);
   let allWords: Array<{ word: string; start: number; end: number; segIdx: number }> = $state([]);
+  let scrollContainer: HTMLDivElement | null = $state(null);
 
   $effect(() => {
     allWords = [];
@@ -17,6 +20,8 @@
       }
     });
     activeWordIdx = -1;
+    activeSegIdx = -1;
+    wordProgress = 0;
   });
 
   function findCurrentWordIdx(time: number): number {
@@ -33,18 +38,46 @@
 
   $effect(() => {
     if (!audioEl) return;
-    const handler = () => {
-      const idx = findCurrentWordIdx(audioEl.currentTime);
-      if (idx !== activeWordIdx) {
+    let rafId: number;
+    let lastScrolledIdx = -1;
+
+    function tick() {
+      if (!audioEl) return;
+      const time = audioEl.currentTime;
+      const idx = findCurrentWordIdx(time);
+
+      if (idx >= 0) {
+        const w = allWords[idx];
+        const duration = w.end - w.start;
+        wordProgress = duration > 0 ? (time - w.start) / duration : 1;
         activeWordIdx = idx;
-        if (idx >= 0) {
-          const el = document.querySelector(`[data-word-idx="${idx}"]`);
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        activeSegIdx = w.segIdx;
+      } else {
+        wordProgress = 0;
+        activeWordIdx = -1;
+        activeSegIdx = -1;
+      }
+
+      if (idx >= 0 && idx !== lastScrolledIdx) {
+        lastScrolledIdx = idx;
+        const el = document.querySelector(`[data-word-idx="${idx}"]`);
+        if (el && scrollContainer) {
+          const containerRect = scrollContainer.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const elCenter = elRect.top + elRect.height / 2;
+          const containerCenter = containerRect.top + containerRect.height / 2;
+          const diff = elCenter - containerCenter;
+          if (Math.abs(diff) > containerRect.height * 0.3) {
+            scrollContainer.scrollBy({ top: diff, behavior: "smooth" });
+          }
         }
       }
-    };
-    audioEl.addEventListener("timeupdate", handler);
-    return () => audioEl.removeEventListener("timeupdate", handler);
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
   });
 
   function seekTo(word: typeof allWords[number]) {
@@ -60,7 +93,7 @@
 {#if allWords.length === 0}
   <p class="no-data">No word-level timestamps available.</p>
 {:else}
-  <div class="transcript-scroll">
+  <div class="transcript-scroll" bind:this={scrollContainer}>
     {#each allWords as w, i (i)}
       {#if isSegmentStart(i)}
         {#if i > 0}<br />{/if}
@@ -68,8 +101,12 @@
       <span
         class="word"
         class:active={i === activeWordIdx}
+        class:in-active-segment={w.segIdx === activeSegIdx}
+        class:past={i < activeWordIdx}
+        class:future={i > activeWordIdx}
         data-word-idx={i}
         onclick={() => seekTo(w)}
+        style={i === activeWordIdx ? `--sweep: ${wordProgress * 100}%` : ""}
       >{w.word}</span>
     {/each}
   </div>
@@ -91,24 +128,46 @@
     border-radius: 12px;
     line-height: 2.2;
     font-size: 1.125rem;
+    scroll-behavior: smooth;
   }
 
   .word {
     cursor: pointer;
     padding: 0.1em 0.05em;
     border-radius: 3px;
-    transition: background-color 0.15s ease;
     white-space: pre-wrap;
+    transition: opacity 0.25s ease, color 0.15s ease;
+    position: relative;
   }
 
   .word:hover {
     background: var(--bg-hover);
   }
 
+  .word.future {
+    opacity: 0.4;
+  }
+
+  .word.past {
+    opacity: 0.6;
+  }
+
+  .word.in-active-segment {
+    opacity: 1;
+  }
+
   .word.active {
-    background: rgba(10, 132, 255, 0.2);
+    opacity: 1;
     color: var(--accent);
-    font-weight: 500;
+    font-weight: 600;
+    background: linear-gradient(
+      90deg,
+      rgba(10, 132, 255, 0.2) 0%,
+      rgba(10, 132, 255, 0.2) var(--sweep, 0%),
+      transparent var(--sweep, 0%),
+      transparent 100%
+    );
+    background-color: transparent;
   }
 
   @media (max-width: 480px) {
