@@ -6,6 +6,11 @@ services:
       - ./output:/output
     deploy:
       resources:
+        limits:
+          # Limit CPU to prevent runaway processes; 4 cores is typical for RTX 3060 Ti tier
+          cpus: "4"
+          # Limit memory to 12 GB (some overhead for host OS + container)
+          memory: 12G
         reservations:
           devices:
             - driver: nvidia

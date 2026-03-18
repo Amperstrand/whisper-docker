@@ -18,11 +18,15 @@ RUN apt-get update && \
 RUN pip3 install --no-cache-dir --break-system-packages \
     requests \
     huggingface_hub \
-    faster-whisper==1.1.1
+    faster-whisper==1.2.1
 
-# Copy the transcription script into the image.
-COPY transcribe.py /app/transcribe.py
+# Use existing 'ubuntu' user from base image (uid 1000).
+# Copy the transcription script with proper ownership.
+COPY --chown=ubuntu:ubuntu transcribe.py /app/transcribe.py
 
 WORKDIR /app
+
+# Run as non-root user for security.
+USER ubuntu
 
 ENTRYPOINT ["python3", "transcribe.py"]
