@@ -4,13 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "deploy:beta": "vite build && wrangler deploy",
+    "deploy:prod": "vite build && wrangler deploy --env production",
+    "typecheck": "svelte-kit sync && tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",
-    "typescript": "^5.7.0",
+    "@sveltejs/adapter-cloudflare": "^7.2.8",
+    "@sveltejs/kit": "^2.55.0",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "svelte": "^5.54.0",
+    "svelte-check": "^4.4.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0",
     "wrangler": "^4.75.0"
   }
 }

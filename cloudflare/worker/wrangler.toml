@@ -1,7 +1,7 @@
 name = "whisper-transcribe-beta"
-main = "src/index.ts"
+main = ".svelte-kit/cloudflare/_worker.js"
 compatibility_date = "2024-12-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_als", "nodejs_compat"]
 
 account_id = "b8b395a6029fc23bcc4f4ac31fcd1f1c"
 
@@ -9,13 +9,12 @@ routes = [
   { pattern = "beta.listen.silent.energy", custom_domain = true }
 ]
 
+[assets]
+binding = "ASSETS"
+directory = ".svelte-kit/cloudflare"
+
 [vars]
 CORS_ORIGIN = "https://beta.listen.silent.energy"
-
-[[rules]]
-type = "Text"
-globs = ["**/*.html", "**/*.css", "**/*.js"]
-fallthrough = true
 
 [[r2_buckets]]
 binding = "R2_BUCKET"
@@ -26,9 +25,6 @@ binding = "DB"
 database_name = "whisper-transcriptions"
 database_id = "5cc56700-c514-4456-9dc9-8ca589753ac6"
 
-# ---------------------------------------------------------------------------
-# Production environment
-# ---------------------------------------------------------------------------
 [env.production]
 name = "whisper-transcribe"
 
@@ -38,11 +34,6 @@ routes = [
 
 [env.production.vars]
 CORS_ORIGIN = "https://listen.silent.energy"
-
-[[env.production.rules]]
-type = "Text"
-globs = ["**/*.html", "**/*.css", "**/*.js"]
-fallthrough = true
 
 [[env.production.r2_buckets]]
 binding = "R2_BUCKET"

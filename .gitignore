@@ -20,6 +20,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+.svelte-kit/
 
 # Environment files (secrets, local config)
 .env
