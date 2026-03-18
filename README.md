@@ -19,6 +19,24 @@ Results appear in `output/`:
 - `transcript.txt` — plain text, one line per segment
 - `segments.json` — structured JSON with timestamps and word-level data
 
+## Quick Test (to verify it works)
+
+If you don't have an audio file handy, run the included test script which generates a spoken sample and transcribes it:
+
+```bash
+# Download the test script and sample setup
+git clone https://github.com/Amperstrand/whisper-docker.git
+cd whisper-docker
+sudo ./setup.sh  # if needed
+./test.sh
+```
+
+The test will:
+- Install `espeak-ng` if not present (on Ubuntu: `sudo apt-get install espeak-ng`)
+- Generate a short spoken test audio file
+- Transcribe it with GPU acceleration
+- Verify the output files are created
+
 ## Fresh Ubuntu Setup
 
 If you have a fresh Ubuntu 22.04 or 24.04 machine with an NVIDIA GPU driver already installed:
