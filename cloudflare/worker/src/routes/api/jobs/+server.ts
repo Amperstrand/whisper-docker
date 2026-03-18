@@ -38,7 +38,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const env = platform?.env;
   if (!env) return json({ error: "Service unavailable" }, 503);
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return json({ error: "Invalid request. Use multipart/form-data with a 'file' field." }, 400);
+  }
+
   const raw = formData.get("file");
 
   if (!raw || typeof raw === "string") {

@@ -162,7 +162,21 @@ info "WORKER_TOKEN secret set"
 cd "$SCRIPT_DIR"
 
 # ---------------------------------------------------------------------------
-# 9. Done
+# 9. Smoke test
+# ---------------------------------------------------------------------------
+step "Running smoke tests..."
+if [ -f "$SCRIPT_DIR/smoke-test.sh" ]; then
+    if "$SCRIPT_DIR/smoke-test.sh" "$DEPLOY_ENV"; then
+        info "Smoke tests passed"
+    else
+        warn "Smoke tests FAILED — review output above"
+    fi
+else
+    warn "smoke-test.sh not found, skipping tests"
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Done
 # ---------------------------------------------------------------------------
 if [ "$DEPLOY_ENV" = "production" ]; then
     WORKER_URL="https://listen.silent.energy"
