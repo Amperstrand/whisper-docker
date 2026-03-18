@@ -7,13 +7,16 @@
 #
 # Usage:
 #   cd gpu-worker
-#   ./run.sh              # foreground (Ctrl+C to stop)
-#   ./run.sh --status     # show pending jobs count, don't start worker
+#   ./run.sh                  # foreground (Ctrl+C to stop)
+#   ./run.sh --status         # show pending jobs count, don't start worker
+#   ./run.sh --rotate-token   # generate new token, update .env + Cloudflare secret
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+PROJECT_DIR="$SCRIPT_DIR/.."
+LOCAL_ENV="$SCRIPT_DIR/.env"
+ROOT_ENV="$PROJECT_DIR/.env"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -27,12 +30,67 @@ fail()  { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 dim()   { echo -e "${CYAN}$*${NC}"; }
 
 # ---------------------------------------------------------------------------
-# Checks
+# Load config: root .env (secrets) first, then local .env (overrides)
 # ---------------------------------------------------------------------------
 
-if [ ! -f "$ENV_FILE" ]; then
-    fail "No .env file found. Copy config.example.env to .env and fill in the values."
+if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
+    fail "No .env file found. Copy gpu-worker/config.example.env to gpu-worker/.env and fill in the values."
 fi
+
+load_env() {
+    for env_file in "$ROOT_ENV" "$LOCAL_ENV"; do
+        [ -f "$env_file" ] || continue
+        set -a
+        source "$env_file"
+        set +a
+    done
+}
+
+load_env
+
+if [ -z "${API_URL:-}" ]; then
+    fail "API_URL not set in .env"
+fi
+
+if [ -z "${WORKER_TOKEN:-}" ]; then
+    fail "WORKER_TOKEN not set in .env (check $(cd "$PROJECT_DIR" 2>/dev/null && pwd)/.env)"
+fi
+
+# ---------------------------------------------------------------------------
+# --rotate-token
+# ---------------------------------------------------------------------------
+
+if [ "${1:-}" = "--rotate-token" ]; then
+    NEW_TOKEN=$(openssl rand -hex 32)
+
+    info "Generating new worker token..."
+
+    if [ -f "$ROOT_ENV" ]; then
+        sed -i.bak "s/^WORKER_TOKEN=.*/WORKER_TOKEN=$NEW_TOKEN/" "$ROOT_ENV"
+        rm -f "$ROOT_ENV.bak"
+        info "Updated $(cd "$PROJECT_DIR" 2>/dev/null && pwd)/.env"
+    fi
+
+    if [ -f "$LOCAL_ENV" ]; then
+        sed -i.bak "s/^WORKER_TOKEN=.*/WORKER_TOKEN=$NEW_TOKEN/" "$LOCAL_ENV"
+        rm -f "$LOCAL_ENV.bak"
+        info "Updated $LOCAL_ENV"
+    fi
+
+    echo ""
+    info "Setting Cloudflare secret..."
+    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
+        npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler secret put WORKER_TOKEN <<< "$NEW_TOKEN" 2>&1 | tail -1
+
+    echo ""
+    info "New WORKER_TOKEN: $NEW_TOKEN"
+    warn "Restart the worker with ./run.sh to pick up the new token."
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
 
 if ! command -v docker >/dev/null 2>&1; then
     fail "docker not found. Run sudo ./setup.sh from the project root."
@@ -48,23 +106,7 @@ if ! docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
 fi
 
 # ---------------------------------------------------------------------------
-# Load config
-# ---------------------------------------------------------------------------
-
-set -a
-source "$ENV_FILE"
-set +a
-
-if [ -z "${API_URL:-}" ]; then
-    fail "API_URL not set in .env"
-fi
-
-if [ -z "${WORKER_TOKEN:-}" ]; then
-    fail "WORKER_TOKEN not set in .env"
-fi
-
-# ---------------------------------------------------------------------------
-# Status check
+# --status
 # ---------------------------------------------------------------------------
 
 if [ "${1:-}" = "--status" ]; then
@@ -95,7 +137,7 @@ for j in json.load(sys.stdin).get('jobs', []):
 " 2>/dev/null
         fi
     elif [ "$HTTP_CODE" = "401" ]; then
-        fail "Authentication failed. Check WORKER_TOKEN in .env."
+        fail "Authentication failed. Run ./run.sh --rotate-token to generate a new token."
     else
         fail "API returned HTTP ${HTTP_CODE}. Check API_URL in .env."
     fi
