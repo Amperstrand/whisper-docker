@@ -1,12 +1,14 @@
 # whisper-docker
 
-Local GPU audio transcription in one command. Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2) with NVIDIA CUDA acceleration inside Docker.
+Local GPU audio transcription, or a full cloud transcription service — your choice.
 
-**No Python on the host. No virtualenvs. No model management. Just `docker compose up`.**
+Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2) with NVIDIA CUDA acceleration inside Docker.
 
-## Quick Start
+## Two Modes
 
-**Prerequisites:** NVIDIA GPU with driver installed, Docker Engine + Compose plugin, NVIDIA Container Toolkit.
+### Local Mode
+
+Transcribe audio files on your machine. No cloud, no accounts, no API keys.
 
 ```bash
 git clone https://github.com/Amperstrand/whisper-docker.git
@@ -19,27 +21,38 @@ Results appear in `output/`:
 - `transcript.txt` — plain text, one line per segment
 - `segments.json` — structured JSON with timestamps and word-level data
 
-## Quick Test (to verify it works)
+### Cloud Mode
 
-If you don't have an audio file handy, run the included test script which generates a spoken sample and transcribes it:
+Deploy a Cloudflare Worker (API + frontend) and connect a GPU worker agent for on-demand transcription from anywhere.
+
+```
+Browser → Cloudflare Worker (API + UI) → R2 (storage) + D1 (queue)
+                                            ↕
+                                      GPU Worker (your machine)
+```
 
 ```bash
-# Download the test script and sample setup
+# 1. Deploy to Cloudflare
+./deploy.sh
+
+# 2. Start GPU worker
+cd gpu-worker && cp config.example.env .env
+# Edit .env with your API URL and token
+docker compose -f compose.worker.yaml up --build
+```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full instructions.
+
+## Quick Test (Local)
+
+```bash
 git clone https://github.com/Amperstrand/whisper-docker.git
 cd whisper-docker
 sudo ./setup.sh  # if needed
 ./test.sh
 ```
 
-The test will:
-- Install `espeak-ng` if not present (on Ubuntu: `sudo apt-get install espeak-ng`)
-- Generate a short spoken test audio file
-- Transcribe it with GPU acceleration
-- Verify the output files are created
-
 ## Fresh Ubuntu Setup
-
-If you have a fresh Ubuntu 22.04 or 24.04 machine with an NVIDIA GPU driver already installed:
 
 ```bash
 git clone https://github.com/Amperstrand/whisper-docker.git
@@ -54,9 +67,65 @@ docker compose up --build
 - NVIDIA Container Toolkit (from `nvidia.github.io`)
 - Validates GPU passthrough end-to-end
 
-Idempotent — safe to run multiple times.
+## Cloud Architecture
 
-## Prerequisites
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      CLOUDFLARE EDGE                         │
+│                                                              │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │ Frontend │───▶│  API Worker  │───▶│  R2 + D1         │  │
+│  │ (served  │    │              │    │                  │  │
+│  │  by      │    │ POST /jobs   │    │  R2: audio/      │  │
+│  │  Worker) │    │ GET  /jobs   │    │      results/    │  │
+│  └──────────┘    └──────┬───────┘    │                  │  │
+│                         │            │  D1: jobs table  │  │
+└─────────────────────────┼────────────┴──────────────────┘  │
+                          │ HTTPS (polling)                    │
+                          ▼                                    │
+┌──────────────────────────────────────────────────────────────┐
+│                   GPU WORKER (your machine)                  │
+│                                                              │
+│  Polls for jobs → downloads audio → transcribes → uploads    │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Project Structure
+
+```
+whisper-docker/
+├── Dockerfile              # Local transcription container
+├── compose.yaml            # Local Docker Compose
+├── transcribe.py           # Transcription script
+├── setup.sh                # Host setup (Docker + NVIDIA)
+├── test.sh                 # End-to-end test
+├── deploy.sh               # Cloudflare deployment script
+├── cloudflare/
+│   ├── worker/
+│   │   ├── src/            # Cloudflare Worker (TypeScript)
+│   │   ├── frontend/       # Web UI (HTML/CSS/JS)
+│   │   └── wrangler.toml   # Worker configuration
+│   └── schema.sql          # D1 database schema
+├── gpu-worker/
+│   ├── worker.py           # GPU worker agent
+│   ├── Dockerfile.worker   # Worker container
+│   └── compose.worker.yaml # Worker Docker Compose
+├── scripts/
+│   └── cleanup.sh          # Manual job cleanup
+└── docs/
+    ├── DEPLOYMENT.md       # Deployment guide
+    ├── API.md              # API reference
+    └── WORKER.md           # GPU worker guide
+```
+
+## Supported Audio Formats
+
+`.wav` `.mp3` `.m4a` `.flac` `.ogg` `.webm`
+
+Maximum file size: 100 MB
+
+## Prerequisites (Local)
 
 | Requirement | How to check |
 |---|---|
@@ -65,50 +134,17 @@ Idempotent — safe to run multiple times.
 | Docker Compose plugin | `docker compose version` |
 | NVIDIA Container Toolkit | `nvidia-ctk --version` |
 
-If anything is missing, run `sudo ./setup.sh` or install manually following the [Docker](https://docs.docker.com/engine/install/ubuntu/) and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) docs.
+## Prerequisites (Cloud)
 
-## Supported Audio Formats
-
-`.wav` `.mp3` `.m4a` `.flac` `.ogg`
-
-Drop any supported file into `input/`. Only the first file found is transcribed.
-
-## Output
-
-### transcript.txt
-
-```
-Hello, this is a test of the local transcription system.
-The quick brown fox jumps over the lazy dog.
-GPU acceleration makes this fast and efficient.
-```
-
-### segments.json
-
-```json
-[
-  {
-    "start": 0.0,
-    "end": 3.52,
-    "text": "Hello, this is a test of the local transcription system.",
-    "words": [
-      { "word": " Hello,", "start": 0.0, "end": 0.36, "probability": 0.9053 },
-      ...
-    ]
-  },
-  ...
-]
-```
+| Requirement | How to check |
+|---|---|
+| Cloudflare account | `npx wrangler whoami` |
+| Node.js 18+ | `node --version` |
+| GPU worker prerequisites | See above |
 
 ## Changing the Model
 
-Edit `transcribe.py` and change the model name in the `WhisperModel(...)` call:
-
-```python
-model = WhisperModel("turbo", device="cuda", compute_type="float16")
-```
-
-Available models (size vs. accuracy tradeoff):
+Edit `transcribe.py` (local) or set `WHISPER_MODEL` env var (cloud):
 
 | Model | VRAM | Speed | Accuracy |
 |---|---|---|---|
@@ -119,12 +155,11 @@ Available models (size vs. accuracy tradeoff):
 | `large-v3` | ~10 GB | Slow | Best |
 | `turbo` | ~5 GB | Fast | Good |
 
-## How It Works
+## Documentation
 
-1. Docker image: `nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04` (CUDA 12.6 + cuDNN 9)
-2. faster-whisper uses CTranslate2 with pre-built CUDA 12 wheels
-3. On first run, the model is downloaded from Hugging Face and cached
-4. Subsequent runs reuse the cached model (fast startup)
+- [Deployment Guide](docs/DEPLOYMENT.md) — Full Cloudflare setup
+- [API Reference](docs/API.md) — All endpoints with examples
+- [Worker Guide](docs/WORKER.md) — GPU worker configuration
 
 ## License
 

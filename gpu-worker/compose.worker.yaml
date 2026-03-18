@@ -1,0 +1,20 @@
+services:
+  whisper-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      # Mount the repo's Dockerfile + compose.yaml for Docker mode transcription
+      - ..:/app:ro
+      # Mount Docker socket for Docker mode (spawns transcription containers)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -9,7 +9,19 @@ input/*.mp3
 input/*.m4a
 input/*.flac
 input/*.ogg
+input/*.webm
 
 # Keep the directories themselves
 !input/.gitkeep
 !output/.gitkeep
+
+# Cloudflare Worker
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+
+# Environment files (secrets, local config)
+.env
+.env.local
+gpu-worker/.env

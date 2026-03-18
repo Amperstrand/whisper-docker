@@ -8,7 +8,7 @@ import time
 
 INPUT_DIR = "/input"
 OUTPUT_DIR = "/output"
-SUPPORTED_EXTENSIONS = ("*.wav", "*.mp3", "*.m4a", "*.flac", "*.ogg")
+SUPPORTED_EXTENSIONS = ("*.wav", "*.mp3", "*.m4a", "*.flac", "*.ogg", "*.webm")
 
 
 def find_audio_file(input_dir: str) -> str | None:

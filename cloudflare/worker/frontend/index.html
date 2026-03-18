@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whisper Transcribe</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Whisper Transcribe</h1>
+      <button id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </header>
+
+    <main>
+      <!-- Upload Section -->
+      <section id="upload-section">
+        <h2>Upload Audio</h2>
+        <div id="drop-zone" tabindex="0" role="button" aria-label="Click or drag to upload audio file">
+          <p>Drop audio file here or <span id="browse-link">browse</span></p>
+          <p class="hint">WAV, MP3, M4A, FLAC, OGG, WebM — up to 100 MB</p>
+          <input type="file" id="file-input" accept=".wav,.mp3,.m4a,.flac,.ogg,.webm,audio/*" hidden>
+        </div>
+        <div id="file-info" class="hidden">
+          <span id="file-name"></span>
+          <span id="file-size" class="muted"></span>
+        </div>
+        <div id="upload-progress" class="hidden">
+          <div class="progress-bar"><div id="progress-fill"></div></div>
+          <span id="progress-text">Uploading...</span>
+        </div>
+      </section>
+
+      <!-- Status Section -->
+      <section id="status-section" class="hidden">
+        <h2>Job Status</h2>
+        <div id="status-card">
+          <div class="status-row">
+            <span class="label">Job ID:</span>
+            <code id="job-id" title="Click to copy">—</code>
+            <button id="copy-id-btn" class="btn-sm" title="Copy job ID">Copy</button>
+          </div>
+          <div class="status-row">
+            <span class="label">File:</span>
+            <span id="job-filename">—</span>
+          </div>
+          <div class="status-row">
+            <span class="label">Status:</span>
+            <span id="job-status">—</span>
+            <span id="status-spinner" class="spinner hidden"></span>
+          </div>
+          <div id="error-display" class="hidden error-box"></div>
+        </div>
+      </section>
+
+      <!-- Results Section -->
+      <section id="results-section" class="hidden">
+        <h2>Transcription Result</h2>
+        <div id="result-tabs">
+          <button class="tab active" data-tab="text">Plain Text</button>
+          <button class="tab" data-tab="json">JSON</button>
+        </div>
+        <div id="tab-text" class="tab-content active">
+          <div class="result-actions">
+            <button id="copy-text-btn" class="btn-sm">Copy</button>
+            <button id="download-text-btn" class="btn-sm">Download .txt</button>
+          </div>
+          <pre id="transcript-text"></pre>
+        </div>
+        <div id="tab-json" class="tab-content">
+          <div class="result-actions">
+            <button id="copy-json-btn" class="btn-sm">Copy</button>
+            <button id="download-json-btn" class="btn-sm">Download .json</button>
+          </div>
+          <pre id="transcript-json"></pre>
+        </div>
+        <div class="result-actions" style="margin-top: 1rem;">
+          <button id="new-job-btn" class="btn-primary">New Transcription</button>
+          <button id="delete-job-btn" class="btn-danger">Delete Job</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <a href="https://github.com/Amperstrand/whisper-docker" target="_blank" rel="noopener">GitHub</a>
+    </footer>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
