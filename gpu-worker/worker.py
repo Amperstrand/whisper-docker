@@ -173,8 +173,8 @@ def download_audio(job_id: str) -> tuple[str, Path]:
         raise RuntimeError(f"Failed to download audio: {exc}") from exc
 
     safe_filename = f"{job_id}.wav"
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f"whisper-{job_id[:8]}-"))
-    os.chmod(tmp_dir, stat.S_IRWXU)
+    tmp_dir = Path(f"/tmp/whisper-{job_id}")
+    tmp_dir.mkdir(mode=0o700, exist_ok=True)
     audio_path = tmp_dir / safe_filename
     total = 0
     with open(audio_path, "wb") as f:
@@ -197,7 +197,7 @@ def transcribe_docker(input_path: Path, output_dir: Path) -> None:
 
     compose_file = repo_root / "compose.yaml"
 
-    subprocess.run(
+    result = subprocess.run(
         [
             "docker", "compose",
             "-f", str(compose_file),
@@ -207,11 +207,14 @@ def transcribe_docker(input_path: Path, output_dir: Path) -> None:
             "-v", f"{output_dir}:/output:rw",
             "transcribe",
         ],
-        check=True,
         capture_output=True,
         text=True,
         timeout=1800,
     )
+    if result.returncode != 0:
+        log.error("Docker stderr:\n%s", result.stderr)
+        log.error("Docker stdout:\n%s", result.stdout)
+        raise RuntimeError(f"Docker exited with code {result.returncode}: {result.stderr.strip()[:500]}")
 
 
 def transcribe_direct(input_path: Path, output_dir: Path) -> None:
@@ -305,7 +308,7 @@ def process_job(job: dict) -> None:
     except Exception as exc:
         timer.tick("error")
         log.error("=== Job %s FAILED after %.3fs ===\n%s", job_id, timer.total(), exc)
-        fail_job(job_id, str(exc))
+        fail_job(job_id, f"Transcription failed. Reference: {job_id[:8]}")
     finally:
         if tmp_dir and Path(tmp_dir).exists():
             shutil.rmtree(tmp_dir, ignore_errors=True)
