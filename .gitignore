@@ -24,4 +24,3 @@ dist/
 # Environment files (secrets, local config)
 .env
 .env.local
-gpu-worker/.env

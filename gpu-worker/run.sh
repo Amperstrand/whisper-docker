@@ -15,8 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
-LOCAL_ENV="$SCRIPT_DIR/.env"
-ROOT_ENV="$PROJECT_DIR/.env"
+ENV_FILE="$PROJECT_DIR/.env"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -30,30 +29,23 @@ fail()  { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 dim()   { echo -e "${CYAN}$*${NC}"; }
 
 # ---------------------------------------------------------------------------
-# Load config: root .env (secrets) first, then local .env (overrides)
+# Load config
 # ---------------------------------------------------------------------------
 
-if [ ! -f "$ROOT_ENV" ] && [ ! -f "$LOCAL_ENV" ]; then
-    fail "No .env file found. Copy gpu-worker/config.example.env to gpu-worker/.env and fill in the values."
+if [ ! -f "$ENV_FILE" ]; then
+    fail "No .env file found at $ENV_FILE. See docs/DEPLOYMENT.md."
 fi
 
-load_env() {
-    for env_file in "$ROOT_ENV" "$LOCAL_ENV"; do
-        [ -f "$env_file" ] || continue
-        set -a
-        source "$env_file"
-        set +a
-    done
-}
-
-load_env
+set -a
+source "$ENV_FILE"
+set +a
 
 if [ -z "${API_URL:-}" ]; then
     fail "API_URL not set in .env"
 fi
 
 if [ -z "${WORKER_TOKEN:-}" ]; then
-    fail "WORKER_TOKEN not set in .env (check $(cd "$PROJECT_DIR" 2>/dev/null && pwd)/.env)"
+    fail "WORKER_TOKEN not set in .env"
 fi
 
 # ---------------------------------------------------------------------------
@@ -65,22 +57,13 @@ if [ "${1:-}" = "--rotate-token" ]; then
 
     info "Generating new worker token..."
 
-    if [ -f "$ROOT_ENV" ]; then
-        sed -i.bak "s/^WORKER_TOKEN=.*/WORKER_TOKEN=$NEW_TOKEN/" "$ROOT_ENV"
-        rm -f "$ROOT_ENV.bak"
-        info "Updated $(cd "$PROJECT_DIR" 2>/dev/null && pwd)/.env"
-    fi
-
-    if [ -f "$LOCAL_ENV" ]; then
-        sed -i.bak "s/^WORKER_TOKEN=.*/WORKER_TOKEN=$NEW_TOKEN/" "$LOCAL_ENV"
-        rm -f "$LOCAL_ENV.bak"
-        info "Updated $LOCAL_ENV"
-    fi
+    sed -i.bak "s/^WORKER_TOKEN=.*/WORKER_TOKEN=$NEW_TOKEN/" "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+    info "Updated $ENV_FILE"
 
     echo ""
     info "Setting Cloudflare secret..."
-    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
-        npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler secret put WORKER_TOKEN <<< "$NEW_TOKEN" 2>&1 | tail -1
+    (cd "$PROJECT_DIR/cloudflare/worker" && CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" npx wrangler secret put WORKER_TOKEN <<< "$NEW_TOKEN" 2>&1) | tail -1
 
     echo ""
     info "New WORKER_TOKEN: $NEW_TOKEN"

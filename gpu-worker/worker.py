@@ -25,7 +25,7 @@ logging.basicConfig(
 log = logging.getLogger("whisper-worker")
 
 WORKER_ID_PATH = os.path.expanduser("~/.whisper-worker-id")
-ENV_PATH = Path(__file__).resolve().parent / ".env"
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 def _load_env() -> None:
     if not ENV_PATH.exists():
