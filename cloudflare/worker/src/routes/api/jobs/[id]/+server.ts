@@ -85,5 +85,5 @@ export const PATCH: RequestHandler = async ({ request, params, platform }) => {
   await env.DB.prepare(`UPDATE jobs SET ${sets.join(", ")} WHERE id = ?`).bind(...values).run();
 
   const updated = await getJob(env.DB, params.id);
-  return json({ job: updated });
+  return json({ success: true, job: updated });
 };
