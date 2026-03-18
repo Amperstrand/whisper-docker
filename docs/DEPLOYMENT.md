@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **Cloudflare account** — free tier works
-2. **Node.js 18+** — for wrangler CLI
+2. **Node.js 18+** — for SvelteKit build + wrangler CLI
 3. **NVIDIA GPU + Docker** — for the GPU worker (see [WORKER.md](WORKER.md))
 4. **Git** — to clone the repository
 
@@ -33,6 +33,7 @@ The first time you run `./deploy.sh`, it will create a `.env` template for you. 
 ## Step 2: Authenticate with Cloudflare
 
 ```bash
+cd cloudflare/worker
 npx wrangler login
 ```
 
@@ -51,17 +52,24 @@ chmod +x deploy.sh
 
 The script handles everything:
 
-1. Validates prerequisites (Node.js, wrangler auth)
+1. Validates prerequisites (Node.js, npx, wrangler auth)
 2. Creates R2 bucket (if not exists)
 3. Creates D1 database (if not exists)
 4. Applies database schema
-5. Configures `wrangler.toml` with your account/database IDs
-6. Installs npm dependencies
-7. Deploys the Worker
+5. Installs npm dependencies
+6. Builds SvelteKit (`vite build`)
+7. Deploys the Worker (`wrangler deploy`)
 8. Sets the `WORKER_TOKEN` secret
 
 You'll see output like:
 
+```
+=========================================
+  Deployment complete (production)!
+=========================================
+
+  Worker URL:  https://listen.silent.energy
+  Health:      https://listen.silent.energy/health
 ```
 ==========================================
   Deployment complete!
@@ -74,49 +82,44 @@ You'll see output like:
 ## Step 4: Verify
 
 ```bash
-curl https://whisper-transcribe.your-subdomain.workers.dev/health
+curl https://listen.silent.energy/health
 # {"status":"ok","timestamp":"..."}
 ```
 
-Open the URL in your browser — you should see the upload interface.
+Open the URL in your browser — you should see the transcription-first audio player.
 
 ## Step 5: Start the GPU Worker
 
-```bash
-cd gpu-worker
-cp config.example.env .env
-```
-
-Edit `gpu-worker/.env`:
+The GPU worker reads config from the project root `.env` file (no separate `gpu-worker/.env` needed). Make sure these variables are set:
 
 ```env
-API_URL=https://whisper-transcribe.your-subdomain.workers.dev
+API_URL=https://listen.silent.energy
 WORKER_TOKEN=<same token from project .env>
-WORKER_ID=gpu-1
 ```
 
 Start the worker:
 
 ```bash
-# Docker mode (recommended — uses the existing Dockerfile)
-docker compose -f compose.worker.yaml up --build
-
-# Or direct mode (no Docker wrapper, faster):
-python3 worker.py  # requires faster-whisper installed
+cd gpu-worker
+./run.sh
 ```
 
 ## Step 6: Test End-to-End
 
 1. Open the Worker URL in your browser
-2. Upload an audio file (WAV, MP3, M4A, FLAC, OGG, or WebM)
-3. Watch the status update from "Pending" to "Processing" to "Completed"
-4. View and download the transcript
+2. Drop an audio file onto the page — it plays locally
+3. Click **Transcribe** to upload and queue the job
+4. Watch the status update from "Queued" to "Transcribing..." to "Completed"
+5. View the karaoke player with word-level highlighting
 
 ## Custom Domain (Optional)
 
-### Worker custom domain
+The project is pre-configured with two environments in `wrangler.toml`:
 
-In `cloudflare/worker/wrangler.toml`, add:
+- **Beta** (top-level): `beta.listen.silent.energy`
+- **Production** (`[env.production]`): `listen.silent.energy`
+
+To use your own domain, edit `cloudflare/worker/wrangler.toml`:
 
 ```toml
 routes = [
@@ -124,7 +127,9 @@ routes = [
 ]
 ```
 
-Then re-run `./deploy.sh`.
+For production, update the `[env.production]` routes section.
+
+Then re-run `./deploy.sh` or `./deploy.sh production`.
 
 ### CORS
 
@@ -138,7 +143,7 @@ CORS_ORIGIN=https://transcribe.yourdomain.com
 
 ### "wrangler is not authenticated"
 
-Run `npx wrangler login` again. Tokens expire.
+Run `cd cloudflare/worker && npx wrangler login` again. Tokens expire.
 
 ### "database_id = PLACEHOLDER" in wrangler.toml
 
@@ -167,4 +172,16 @@ Jobs automatically reset to "pending" after 30 minutes. If a worker crashed, the
 
 ```bash
 ./scripts/cleanup.sh 30  # delete jobs older than 30 days
+```
+
+## Manual Build & Deploy
+
+If you want to bypass `deploy.sh` and build/deploy manually:
+
+```bash
+cd cloudflare/worker
+npm install
+npm run build          # builds SvelteKit via vite
+npx wrangler deploy    # deploys to beta
+npx wrangler deploy --env production  # deploys to production
 ```

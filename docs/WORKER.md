@@ -14,19 +14,23 @@ Run `sudo ./setup.sh` from the project root if you need to install Docker and NV
 
 ### 1. Configure
 
-```bash
-cd gpu-worker
-cp config.example.env .env
-```
-
-Edit `.env` with your deployment values:
+All config lives in the project root `.env` file (gitignored). Make sure these variables are set:
 
 ```env
-API_URL=https://whisper-transcribe.your-subdomain.workers.dev
+API_URL=https://listen.silent.energy
 WORKER_TOKEN=<same token from project root .env>
-WORKER_ID=gpu-1
-MODE=docker
-POLL_INTERVAL=60
+```
+
+Optional variables (with defaults):
+
+```env
+WORKER_ID=gpu-1          # auto-generated if not set
+POLL_INTERVAL=60         # seconds between polls
+MAX_CONCURRENT_JOBS=1    # parallel jobs (requires sufficient VRAM)
+MODE=docker              # docker or direct
+WHISPER_MODEL=turbo      # whisper model name
+RETRY_MAX=3              # API request retries
+RETRY_BASE_DELAY=2       # exponential backoff base (seconds)
 ```
 
 ### 2. Check for pending jobs
@@ -38,10 +42,10 @@ POLL_INTERVAL=60
 Output:
 
 ```
-Checking for pending jobs at https://whisper-transcribe.example.workers.dev...
+Checking for pending jobs at https://listen.silent.energy...
 
   Pending jobs: 2
-  Worker URL:   https://whisper-transcribe.example.workers.dev
+  Worker URL:   https://listen.silent.energy
   Mode:         docker
   Poll interval: 60s
 
@@ -76,7 +80,7 @@ When a job comes in:
 
 ## How It Works
 
-1. `run.sh` checks prerequisites and loads `.env`
+1. `run.sh` checks prerequisites (Docker, NVIDIA runtime), loads config from `../.env`
 2. `worker.py` starts polling `GET /api/jobs?status=pending` every `POLL_INTERVAL` seconds
 3. When a pending job is found, it atomically claims it (`PATCH` to `processing`)
 4. Audio is downloaded to a temp directory (`/tmp/whisper-<id>/`) with `0700` permissions
@@ -116,15 +120,7 @@ Workers atomically claim jobs — no duplicate processing.
 
 ## Docker Compose Mode (Alternative)
 
-Instead of `run.sh`, you can run the worker inside Docker:
-
-```bash
-docker compose -f compose.worker.yaml up --build
-docker compose -f compose.worker.yaml logs -f
-docker compose -f compose.worker.yaml down
-```
-
-Note: Docker Compose mode mounts the Docker socket for spawning transcription containers. It's more complex but works well for always-on deployments.
+Not yet implemented. Use `run.sh` for now.
 
 ## Graceful Shutdown
 
@@ -152,7 +148,7 @@ The worker looks for `../Dockerfile` relative to the `gpu-worker/` directory. Ma
 
 ### Jobs stuck in "processing"
 
-Jobs automatically reset to "pending" after 30 minutes. If your jobs take longer than 30 minutes, the timeout can be adjusted in the Worker source (`routes.ts` — `STALE_JOB_MINUTES`).
+Jobs automatically reset to "pending" after 30 minutes. If your jobs take longer than 30 minutes, the timeout can be adjusted in the Worker source (`auth.ts` — `STALE_JOB_MINUTES`).
 
 ### Worker not picking up jobs
 

@@ -83,7 +83,6 @@ step "Checking prerequisites..."
 
 command -v node >/dev/null 2>&1 || fail "Node.js not found. Install from https://nodejs.org"
 command -v npx >/dev/null 2>&1 || fail "npx not found (install Node.js)"
-command -v wrangler >/dev/null 2>&1 || fail "wrangler not found. Run: npm install -g wrangler"
 
 if ! npx wrangler whoami 2>&1 | grep -q "Account"; then
     fail "wrangler is not authenticated. Run: npx wrangler login"
@@ -145,6 +144,10 @@ npm install 2>&1 || fail "npm install failed"
 info "Dependencies installed"
 
 step "Building SvelteKit..."
+npx vite build 2>&1 || fail "SvelteKit build failed"
+info "SvelteKit built"
+
+step "Deploying Worker..."
 # shellcheck disable=SC2086
 npx wrangler deploy $WRANGLER_ENV_FLAG 2>&1 || fail "Worker deployment failed"
 

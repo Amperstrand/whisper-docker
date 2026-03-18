@@ -251,6 +251,14 @@
       <span class="file-meta">{file ? formatBytes(file.size) : ""}</span>
     </div>
 
+    {#if phase === "playing"}
+      <div class="actions">
+        <button class="btn-primary" onclick={startTranscription}>
+          Transcribe
+        </button>
+      </div>
+    {/if}
+
     {#if blobUrl}
       <div class="audio-container">
         <!-- svelte-ignore a11y_media_has_caption -->
@@ -266,14 +274,6 @@
     {#if !canPlay}
       <div class="notice">
         <p>Your browser may not support this format. You can still request transcription.</p>
-      </div>
-    {/if}
-
-    {#if phase === "playing"}
-      <div class="actions">
-        <button class="btn-primary" onclick={startTranscription}>
-          Transcribe
-        </button>
       </div>
     {/if}
 
