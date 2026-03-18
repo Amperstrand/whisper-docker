@@ -137,14 +137,14 @@ npx wrangler d1 execute "$D1_NAME" --remote --file="$SCRIPT_DIR/cloudflare/schem
 info "Schema applied"
 
 # ---------------------------------------------------------------------------
-# 7. Install npm dependencies and deploy
+# 7. Build SvelteKit and deploy
 # ---------------------------------------------------------------------------
 step "Installing Worker dependencies..."
 cd "$WORKER_DIR"
 npm install 2>&1 || fail "npm install failed"
 info "Dependencies installed"
 
-step "Deploying Worker ($DEPLOY_ENV)..."
+step "Building SvelteKit..."
 # shellcheck disable=SC2086
 npx wrangler deploy $WRANGLER_ENV_FLAG 2>&1 || fail "Worker deployment failed"
 
