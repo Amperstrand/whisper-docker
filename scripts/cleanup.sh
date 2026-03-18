@@ -3,9 +3,10 @@
 # cleanup.sh — Remove jobs and their R2 storage.
 #
 # Usage:
-#   ./scripts/cleanup.sh [DAYS]
+#   ./scripts/cleanup.sh [DAYS] [--force]
 #
 #   DAYS: Delete jobs older than this many days (default: 0 = all jobs)
+#   --force: Skip confirmation prompt
 #
 # Requires: wrangler authenticated (or CLOUDFLARE_API_TOKEN in .env)
 #
@@ -14,7 +15,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
 ENV_FILE="$PROJECT_DIR/.env"
-DAYS="${1:-0}"
+DAYS=0
+FORCE=false
+for arg in "${1:-}" "${2:-}"; do
+    case "$arg" in
+        --force) FORCE=true ;;
+        *) DAYS="$arg" ;;
+    esac
+done
+DAYS="${DAYS:-0}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,10 +78,14 @@ for row in json.load(sys.stdin)[0].get('results', []):
 " 2>/dev/null
 echo ""
 
-read -rp "Delete $COUNT job(s)? [y/N] " confirm
-if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-    echo "Cancelled."
-    exit 0
+if [ "$FORCE" = "true" ]; then
+    info "Force mode — skipping confirmation."
+else
+    read -rp "Delete $COUNT job(s)? [y/N] " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "Cancelled."
+        exit 0
+    fi
 fi
 
 IDS=$(echo "$ROWS" | python3 -c "
@@ -84,18 +97,26 @@ for row in json.load(sys.stdin)[0].get('results', []):
 DELETED=0
 FAILED=0
 
-for id in $IDS; do
-    # Delete from D1
-    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
+delete_job() {
+    local id="$1"
+    if CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
         npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler d1 execute "$D1_NAME" --remote \
-        --command="DELETE FROM jobs WHERE id = '$id'" >/dev/null 2>&1 && ((DELETED++)) || ((FAILED++))
-    # Delete R2 objects
-    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
-        npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler r2 object delete "$R2_NAME/audio/$id" --force >/dev/null 2>&1 || true
-    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
-        npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler r2 object delete "$R2_NAME/results/$id/transcript.txt" --force >/dev/null 2>&1 || true
-    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
-        npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler r2 object delete "$R2_NAME/results/$id/segments.json" --force >/dev/null 2>&1 || true
+        --command="DELETE FROM jobs WHERE id = '$id'" >/dev/null 2>&1; then
+        # Delete R2 objects
+        CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
+            npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler r2 object delete "$R2_NAME/results/$id/transcript.txt" --force >/dev/null 2>&1 || true
+        CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}" \
+            npx --prefix "$PROJECT_DIR/cloudflare/worker" wrangler r2 object delete "$R2_NAME/results/$id/segments.json" --force >/dev/null 2>&1 || true
+        echo "  [OK] $id"
+        ((DELETED++))
+    else
+        echo "  [FAIL] $id"
+        ((FAILED++))
+    fi
+}
+
+for id in $IDS; do
+    delete_job "$id"
 done
 
 echo ""
