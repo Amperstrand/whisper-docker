@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+  import JobHistory from "$lib/components/JobHistory.svelte";
 
   let { children }: { children: Snippet } = $props();
 </script>
@@ -22,6 +23,8 @@
   <main>
     {@render children()}
   </main>
+
+  <JobHistory />
 
   <footer>
     <p>
