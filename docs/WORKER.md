@@ -6,100 +6,133 @@ The GPU worker polls the Cloudflare Worker API for pending transcription jobs, d
 
 - NVIDIA GPU with driver installed
 - Docker Engine + Compose plugin + NVIDIA Container Toolkit
-- Python 3.10+ (for direct mode)
+- Python 3.10+ (ships with Ubuntu, or for direct mode)
 
 Run `sudo ./setup.sh` from the project root if you need to install Docker and NVIDIA toolkit.
 
 ## Quick Start
 
-### Docker Mode (Recommended)
+### 1. Configure
 
-This mode uses the existing `Dockerfile` to run transcription in a container, managed by the worker agent.
+```bash
+cd gpu-worker
+cp config.example.env .env
+```
 
-1. **Configure**:
-   ```bash
-   cd gpu-worker
-   cp config.example.env .env
-   ```
+Edit `.env` with your deployment values:
 
-   Edit `.env`:
-   ```env
-   API_URL=https://whisper-transcribe.your-subdomain.workers.dev
-   WORKER_TOKEN=<same token from project root .env>
-   WORKER_ID=gpu-1
-   MODE=docker
-   ```
+```env
+API_URL=https://whisper-transcribe.your-subdomain.workers.dev
+WORKER_TOKEN=<same token from project root .env>
+WORKER_ID=gpu-1
+MODE=docker
+POLL_INTERVAL=60
+```
 
-2. **Build and run**:
-   ```bash
-   docker compose -f compose.worker.yaml up --build
-   ```
+### 2. Check for pending jobs
 
-### Direct Mode
+```bash
+./run.sh --status
+```
 
-This mode runs faster-whisper directly in the worker process (no Docker wrapper). Faster startup, but requires Python + faster-whisper on the host.
+Output:
 
-1. **Install dependencies**:
-   ```bash
-   pip install requests faster-whisper
-   ```
+```
+Checking for pending jobs at https://whisper-transcribe.example.workers.dev...
 
-2. **Configure**:
-   ```env
-   MODE=direct
-   WHISPER_MODEL=turbo
-   ```
+  Pending jobs: 2
+  Worker URL:   https://whisper-transcribe.example.workers.dev
+  Mode:         docker
+  Poll interval: 60s
 
-3. **Run**:
-   ```bash
-   python3 worker.py
-   ```
+Jobs:
+  5e2f561a...  recording.wav                     3.2 MB
+  0ec144db...  meeting-notes.mp3                12.1 MB
+```
+
+### 3. Start the worker
+
+```bash
+./run.sh
+```
+
+This checks prerequisites (Docker, NVIDIA runtime), loads config from `.env`, and streams logs to your terminal. Ctrl+C to stop.
+
+When a job comes in:
+
+```
+2026-03-18 19:00:20 [INFO] === Processing job 5e2f561a...: recording.wav ===
+2026-03-18 19:00:20 [INFO]   [claim] 0.142s
+2026-03-18 19:00:21 [INFO]   [download] 0.891s
+2026-03-18 19:00:22 [INFO]   [transcribe] 1.320s
+2026-03-18 19:00:23 [INFO]   [upload] 0.254s
+2026-03-18 19:00:23 [INFO] === Job 5e2f561a... completed ===
+  claim: 0.142s
+  download: 0.891s
+  transcribe: 1.320s
+  upload: 0.254s
+  TOTAL: 2.607s
+```
+
+## How It Works
+
+1. `run.sh` checks prerequisites and loads `.env`
+2. `worker.py` starts polling `GET /api/jobs?status=pending` every `POLL_INTERVAL` seconds
+3. When a pending job is found, it atomically claims it (`PATCH` to `processing`)
+4. Audio is downloaded to a temp directory (`/tmp/whisper-<id>/`) with `0700` permissions
+5. **Docker mode**: spawns a Docker container using the existing `Dockerfile` to transcribe
+6. **Direct mode**: runs faster-whisper in-process (requires `pip install faster-whisper`)
+7. Results (transcript.txt + segments.json) are uploaded to the API
+8. Audio is auto-deleted from cloud storage after successful upload
+9. Temp files are cleaned up
 
 ## Configuration Reference
 
 | Variable | Default | Description |
 |---|---|---|
-| `API_URL` | *(required)* | Cloudflare Worker URL (e.g., `https://whisper-transcribe.example.workers.dev`) |
-| `WORKER_TOKEN` | *(required)* | Bearer token matching the Worker's `WORKER_TOKEN` secret |
-| `WORKER_ID` | `gpu-1` | Unique identifier for this worker instance |
+| `API_URL` | *(required)* | Cloudflare Worker URL |
+| `WORKER_TOKEN` | *(required)* | Bearer token for worker authentication |
+| `WORKER_ID` | auto-generated | Unique ID for this worker (persisted in `~/.whisper-worker-id`) |
 | `POLL_INTERVAL` | `5` | Seconds between polling for new jobs |
 | `MAX_CONCURRENT_JOBS` | `1` | Maximum parallel jobs (requires sufficient VRAM) |
 | `MODE` | `docker` | `docker` (containerized) or `direct` (in-process) |
-| `WHISPER_MODEL` | `turbo` | Whisper model name (direct mode) |
+| `WHISPER_MODEL` | `turbo` | Whisper model name |
 | `RETRY_MAX` | `3` | Max API request retries |
 | `RETRY_BASE_DELAY` | `2` | Base delay for exponential backoff (seconds) |
 
-## Running with Docker Compose
+## Worker ID
 
-The `compose.worker.yaml` mounts the parent repo directory (read-only) so the worker can invoke `docker compose` for transcription. It also mounts the Docker socket.
-
-```bash
-# Start in background
-docker compose -f compose.worker.yaml up -d --build
-
-# View logs
-docker compose -f compose.worker.yaml logs -f
-
-# Stop
-docker compose -f compose.worker.yaml down
-```
+If `WORKER_ID` is not set in `.env`, a random ID is generated and saved to `~/.whisper-worker-id`. This ID persists across restarts and appears in the `worker_id` field of each job in the database — so you can tell which machine processed which job.
 
 ## Multiple Workers
 
 To run multiple GPU workers (e.g., on different machines):
 
-1. Deploy the same `gpu-worker/` to each machine
-2. Give each a unique `WORKER_ID` (e.g., `gpu-1`, `gpu-2`)
+1. Copy `gpu-worker/` to each machine
+2. Give each a unique `WORKER_ID` (or let it auto-generate)
 3. Use the same `API_URL` and `WORKER_TOKEN`
 
 Workers atomically claim jobs — no duplicate processing.
 
+## Docker Compose Mode (Alternative)
+
+Instead of `run.sh`, you can run the worker inside Docker:
+
+```bash
+docker compose -f compose.worker.yaml up --build
+docker compose -f compose.worker.yaml logs -f
+docker compose -f compose.worker.yaml down
+```
+
+Note: Docker Compose mode mounts the Docker socket for spawning transcription containers. It's more complex but works well for always-on deployments.
+
 ## Graceful Shutdown
 
-The worker handles `SIGINT` (Ctrl+C) and `SIGTERM` (docker stop) gracefully. It will:
+Ctrl+C (or `SIGTERM`) will:
 1. Stop polling for new jobs
 2. Wait for the current job to finish
-3. Exit cleanly
+3. Clean up temp files
+4. Exit cleanly
 
 ## Troubleshooting
 
@@ -113,7 +146,7 @@ Another worker may have claimed it first, or the job was deleted. This is normal
 - Reduce `MAX_CONCURRENT_JOBS` to 1
 - Close other GPU-intensive applications
 
-### Docker mode: "Dockerfile not found"
+### "Dockerfile not found"
 
 The worker looks for `../Dockerfile` relative to the `gpu-worker/` directory. Make sure the repo structure is intact.
 
@@ -123,6 +156,6 @@ Jobs automatically reset to "pending" after 30 minutes. If your jobs take longer
 
 ### Worker not picking up jobs
 
-1. Check `API_URL` is correct and reachable: `curl <API_URL>/health`
+1. Check `API_URL` is reachable: `./run.sh --status`
 2. Check `WORKER_TOKEN` matches: compare with `grep WORKER_TOKEN ../.env`
-3. Check logs for errors: `docker compose -f compose.worker.yaml logs -f`
+3. Check logs for errors

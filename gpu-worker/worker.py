@@ -25,6 +25,26 @@ logging.basicConfig(
 log = logging.getLogger("whisper-worker")
 
 WORKER_ID_PATH = os.path.expanduser("~/.whisper-worker-id")
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+
+def _load_env() -> None:
+    if not ENV_PATH.exists():
+        return
+    with open(ENV_PATH) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key in os.environ:
+                continue
+            os.environ.setdefault(key, value)
+
+_load_env()
 
 CONFIG = {
     "api_url": os.environ.get("API_URL", "").rstrip("/"),

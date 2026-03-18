@@ -31,17 +31,38 @@ Browser → Cloudflare Worker (API + UI) → R2 (storage) + D1 (queue)
                                       GPU Worker (your machine)
 ```
 
-```bash
-# 1. Deploy to Cloudflare
-./deploy.sh
+#### Step 1: Deploy to Cloudflare
 
-# 2. Start GPU worker
-cd gpu-worker && cp config.example.env .env
-# Edit .env with your API URL and token
-docker compose -f compose.worker.yaml up --build
+```bash
+./deploy.sh
 ```
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full instructions.
+
+#### Step 2: Start the GPU worker
+
+The GPU worker polls the API for pending jobs, downloads audio, transcribes with your GPU, and uploads results.
+
+```bash
+cd gpu-worker
+cp config.example.env .env
+# Edit .env — set API_URL and WORKER_TOKEN (see deploy output)
+./run.sh              # start processing (Ctrl+C to stop)
+./run.sh --status     # check how many jobs are waiting
+```
+
+`run.sh` checks prerequisites (Docker, NVIDIA runtime), loads config from `.env`, and streams logs to your terminal. When a job comes in you'll see:
+
+```
+2026-03-18 19:00:20 [INFO] === Processing job 5e2f561a...: recording.wav ===
+2026-03-18 19:00:20 [INFO]   [claim] 0.142s
+2026-03-18 19:00:21 [INFO]   [download] 0.891s
+2026-03-18 19:00:22 [INFO]   [transcribe] 1.320s
+2026-03-18 19:00:23 [INFO]   [upload] 0.254s
+2026-03-18 19:00:23 [INFO] === Job 5e2f561a... completed ===
+```
+
+**Multiple machines:** Copy `gpu-worker/` to any machine with a GPU. Give each a unique `WORKER_ID` in `.env`. Workers atomically claim jobs — no duplicates.
 
 ## Quick Test (Local)
 
@@ -108,9 +129,11 @@ whisper-docker/
 │   │   └── wrangler.toml   # Worker configuration
 │   └── schema.sql          # D1 database schema
 ├── gpu-worker/
+│   ├── run.sh              # Start worker (status check, logging)
 │   ├── worker.py           # GPU worker agent
-│   ├── Dockerfile.worker   # Worker container
-│   └── compose.worker.yaml # Worker Docker Compose
+│   ├── Dockerfile.worker   # Worker container (optional)
+│   ├── compose.worker.yaml # Worker Docker Compose (optional)
+│   └── config.example.env  # Configuration template
 ├── scripts/
 │   └── cleanup.sh          # Manual job cleanup
 └── docs/
