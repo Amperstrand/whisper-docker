@@ -195,17 +195,14 @@ def transcribe_docker(input_path: Path, output_dir: Path) -> None:
     if not dockerfile.exists():
         raise RuntimeError(f"Dockerfile not found at {dockerfile}")
 
-    compose_file = repo_root / "compose.yaml"
+    image_name = "whisper-docker-transcribe"
 
     result = subprocess.run(
         [
-            "docker", "compose",
-            "-f", str(compose_file),
-            "run",
-            "--rm",
+            "docker", "run", "--rm", "--gpus", "all",
             "-v", f"{input_path}:/input/{input_path.name}:ro",
             "-v", f"{output_dir}:/output:rw",
-            "transcribe",
+            image_name,
         ],
         capture_output=True,
         text=True,
