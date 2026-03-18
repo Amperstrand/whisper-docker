@@ -249,8 +249,11 @@ section {
 }
 
 /* History */
+#history-section {
+  margin-top: 2rem;
+}
+
 #history-list {
-  margin-top: 1.25rem;
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;
 }

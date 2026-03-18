@@ -107,15 +107,16 @@
   }
 
   function renderHistory() {
+    var section = $("#history-section");
     var container = $("#history-list");
     var jobs = getHistory();
 
     if (jobs.length === 0) {
-      container.classList.add("hidden");
+      section.classList.add("hidden");
       return;
     }
 
-    container.classList.remove("hidden");
+    section.classList.remove("hidden");
     container.innerHTML = "";
 
     jobs.forEach(function (job) {

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -23,10 +24,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("whisper-worker")
 
+WORKER_ID_PATH = os.path.expanduser("~/.whisper-worker-id")
+
 CONFIG = {
     "api_url": os.environ.get("API_URL", "").rstrip("/"),
     "worker_token": os.environ.get("WORKER_TOKEN", ""),
-    "worker_id": os.environ.get("WORKER_ID", "gpu-1"),
+    "worker_id": os.environ.get("WORKER_ID", ""),
     "poll_interval": int(os.environ.get("POLL_INTERVAL", "5")),
     "max_concurrent_jobs": int(os.environ.get("MAX_CONCURRENT_JOBS", "1")),
     "mode": os.environ.get("MODE", "docker"),
@@ -36,6 +39,40 @@ CONFIG = {
 }
 
 SHUTDOWN = threading.Event()
+
+
+def load_or_create_worker_id() -> str:
+    if CONFIG["worker_id"]:
+        return CONFIG["worker_id"]
+    if os.path.exists(WORKER_ID_PATH):
+        with open(WORKER_ID_PATH, "r") as f:
+            return f.read().strip()
+    wid = str(uuid.uuid4())[:8]
+    with open(WORKER_ID_PATH, "w") as f:
+        f.write(wid)
+    os.chmod(WORKER_ID_PATH, stat.S_IRUSR | stat.S_IWUSR)
+    return wid
+
+
+class Timer:
+    def __init__(self):
+        self.steps: list[dict] = []
+        self._start = time.perf_counter()
+
+    def tick(self, label: str) -> None:
+        now = time.perf_counter()
+        elapsed = now - self._start
+        self.steps.append({"label": label, "elapsed": round(elapsed, 3)})
+        self._start = now
+        log.info("  [%s] %.3fs", label, elapsed)
+
+    def total(self) -> float:
+        return sum(s["elapsed"] for s in self.steps)
+
+    def summary(self) -> str:
+        lines = [f"  {s['label']}: {s['elapsed']:.3f}s" for s in self.steps]
+        lines.append(f"  TOTAL: {self.total():.3f}s")
+        return "\n".join(lines)
 
 
 def api_headers() -> dict[str, str]:
@@ -212,15 +249,19 @@ def upload_results(job_id: str, transcript_path: Path, segments_path: Path) -> N
 def process_job(job: dict) -> None:
     job_id = job["id"]
     filename = job["original_filename"]
-    log.info("Processing job %s: %s", job_id, filename)
+    timer = Timer()
+    log.info("=== Processing job %s: %s ===", job_id, filename)
 
     if not claim_job(job_id):
         log.warning("Failed to claim job %s — skipping", job_id)
         return
+    timer.tick("claim")
 
     tmp_dir = None
     try:
         _filename, tmp_dir = download_audio(job_id)
+        timer.tick("download")
+
         audio_path = list(Path(tmp_dir).iterdir())[0]
         output_dir = Path(tmp_dir) / "output"
         output_dir.mkdir(mode=0o700)
@@ -229,6 +270,7 @@ def process_job(job: dict) -> None:
             transcribe_docker(audio_path, output_dir)
         else:
             transcribe_direct(audio_path, output_dir)
+        timer.tick("transcribe")
 
         transcript_path = output_dir / "transcript.txt"
         segments_path = output_dir / "segments.json"
@@ -237,10 +279,12 @@ def process_job(job: dict) -> None:
             raise RuntimeError("Transcription output files not found")
 
         upload_results(job_id, transcript_path, segments_path)
-        log.info("Job %s completed successfully", job_id)
+        timer.tick("upload")
 
+        log.info("=== Job %s completed ===\n%s", job_id, timer.summary())
     except Exception as exc:
-        log.error("Job %s failed: %s", job_id, exc)
+        timer.tick("error")
+        log.error("=== Job %s FAILED after %.3fs ===\n%s", job_id, timer.total(), exc)
         fail_job(job_id, str(exc))
     finally:
         if tmp_dir and Path(tmp_dir).exists():
@@ -254,9 +298,11 @@ def main() -> None:
         log.error("Missing required config: %s. Set via environment or .env file.", ", ".join(missing))
         sys.exit(1)
 
+    CONFIG["worker_id"] = load_or_create_worker_id()
+
     log.info("Whisper GPU Worker starting")
-    log.info("  API URL:         %s", CONFIG["api_url"])
     log.info("  Worker ID:       %s", CONFIG["worker_id"])
+    log.info("  API URL:         %s", CONFIG["api_url"])
     log.info("  Mode:            %s", CONFIG["mode"])
     log.info("  Model:           %s", CONFIG["whisper_model"])
     log.info("  Max concurrent:  %d", CONFIG["max_concurrent_jobs"])
@@ -299,7 +345,7 @@ def main() -> None:
                 if f.done() and f.exception():
                     log.error("Job raised exception: %s", f.exception())
 
-    log.info("Worker shut down cleanly")
+    log.info("Worker %s shut down cleanly", CONFIG["worker_id"])
 
 
 if __name__ == "__main__":
