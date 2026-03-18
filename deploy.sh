@@ -8,13 +8,16 @@
 #   - .env file configured (see below)
 #
 # Usage:
-#   ./deploy.sh
+#   ./deploy.sh              # Deploy to beta (beta.listen.silent.energy)
+#   ./deploy.sh production   # Deploy to production (listen.silent.energy)
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 WORKER_DIR="$SCRIPT_DIR/cloudflare/worker"
+
+DEPLOY_ENV="${1:-beta}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,6 +29,18 @@ info()  { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[SKIP]${NC} $*"; }
 step()  { echo -e "${BLUE}[...]${NC} $*"; }
 fail()  { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
+
+if [ "$DEPLOY_ENV" != "beta" ] && [ "$DEPLOY_ENV" != "production" ]; then
+    fail "Usage: $0 [beta|production]"
+fi
+
+WRANGLER_ENV_FLAG=""
+if [ "$DEPLOY_ENV" = "production" ]; then
+    WRANGLER_ENV_FLAG="--env production"
+    echo "Deploying to PRODUCTION (listen.silent.energy)"
+else
+    echo "Deploying to BETA (beta.listen.silent.energy)"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Load .env
@@ -70,7 +85,6 @@ command -v node >/dev/null 2>&1 || fail "Node.js not found. Install from https:/
 command -v npx >/dev/null 2>&1 || fail "npx not found (install Node.js)"
 command -v wrangler >/dev/null 2>&1 || fail "wrangler not found. Run: npm install -g wrangler"
 
-# Verify wrangler auth
 if ! npx wrangler whoami 2>&1 | grep -q "Account"; then
     fail "wrangler is not authenticated. Run: npx wrangler login"
 fi
@@ -123,53 +137,39 @@ npx wrangler d1 execute "$D1_NAME" --remote --file="$SCRIPT_DIR/cloudflare/schem
 info "Schema applied"
 
 # ---------------------------------------------------------------------------
-# 7. Update wrangler.toml with real values
-# ---------------------------------------------------------------------------
-step "Configuring Worker..."
-
-WRANGLER_TOML="$WORKER_DIR/wrangler.toml"
-
-# Update account_id
-if command -v sed >/dev/null 2>&1; then
-    sed -i.bak "s/database_id = \"PLACEHOLDER\"/database_id = \"$DB_ID\"/" "$WRANGLER_TOML"
-    rm -f "$WRANGLER_TOML.bak"
-else
-    fail "sed not found — cannot update wrangler.toml"
-fi
-
-info "wrangler.toml configured"
-
-# ---------------------------------------------------------------------------
-# 8. Install npm dependencies and deploy
+# 7. Install npm dependencies and deploy
 # ---------------------------------------------------------------------------
 step "Installing Worker dependencies..."
 cd "$WORKER_DIR"
 npm install 2>&1 || fail "npm install failed"
 info "Dependencies installed"
 
-step "Deploying Worker..."
-npx wrangler deploy 2>&1 || fail "Worker deployment failed"
-
-WORKER_URL=$(npx wrangler deploy --dry-run 2>&1 | grep -oP 'https://[a-z0-9-]+\.workers\.dev' | head -1 || echo "")
-if [ -z "$WORKER_URL" ]; then
-    WORKER_URL="https://whisper-transcribe.<your-subdomain>.workers.dev"
-fi
+step "Deploying Worker ($DEPLOY_ENV)..."
+# shellcheck disable=SC2086
+npx wrangler deploy $WRANGLER_ENV_FLAG 2>&1 || fail "Worker deployment failed"
 
 # ---------------------------------------------------------------------------
-# 9. Set WORKER_TOKEN as secret
+# 8. Set WORKER_TOKEN as secret
 # ---------------------------------------------------------------------------
 step "Setting Worker secrets..."
-echo "$WORKER_TOKEN" | npx wrangler secret put WORKER_TOKEN 2>&1 || fail "Failed to set WORKER_TOKEN secret"
+# shellcheck disable=SC2086
+echo "$WORKER_TOKEN" | npx wrangler secret put WORKER_TOKEN $WRANGLER_ENV_FLAG 2>&1 || fail "Failed to set WORKER_TOKEN secret"
 info "WORKER_TOKEN secret set"
 
 cd "$SCRIPT_DIR"
 
 # ---------------------------------------------------------------------------
-# 10. Done
+# 9. Done
 # ---------------------------------------------------------------------------
+if [ "$DEPLOY_ENV" = "production" ]; then
+    WORKER_URL="https://listen.silent.energy"
+else
+    WORKER_URL="https://beta.listen.silent.energy"
+fi
+
 echo ""
 echo "=========================================="
-echo "  Deployment complete!"
+echo "  Deployment complete ($DEPLOY_ENV)!"
 echo "=========================================="
 echo ""
 echo "  Worker URL:  $WORKER_URL"
@@ -181,10 +181,7 @@ echo "  1. Verify health check:"
 echo "     curl $WORKER_URL/health"
 echo ""
 echo "  2. Configure GPU worker:"
-echo "     cd gpu-worker"
-echo "     cp config.example.env .env"
-echo "     # Edit .env — set API_URL=$WORKER_URL and WORKER_TOKEN=$WORKER_TOKEN"
-echo "     docker compose -f compose.worker.yaml up --build"
+echo "     Edit .env — set API_URL=$WORKER_URL and WORKER_TOKEN=$WORKER_TOKEN"
 echo ""
 echo "  3. Upload audio and test:"
 echo "     Open $WORKER_URL in your browser"

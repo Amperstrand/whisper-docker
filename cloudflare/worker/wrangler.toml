@@ -1,31 +1,54 @@
-name = "whisper-transcribe"
+name = "whisper-transcribe-beta"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 account_id = "b8b395a6029fc23bcc4f4ac31fcd1f1c"
 
-# Custom domain
 routes = [
-  { pattern = "listen.silent.energy", custom_domain = true }
+  { pattern = "beta.listen.silent.energy", custom_domain = true }
 ]
 
 [vars]
-CORS_ORIGIN = "https://listen.silent.energy"
+CORS_ORIGIN = "https://beta.listen.silent.energy"
 
-# Import static assets as text modules
 [[rules]]
 type = "Text"
 globs = ["**/*.html", "**/*.css", "**/*.js"]
 fallthrough = true
 
-# R2 bucket binding
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "whisper-transcriptions"
 
-# D1 database binding
 [[d1_databases]]
+binding = "DB"
+database_name = "whisper-transcriptions"
+database_id = "5cc56700-c514-4456-9dc9-8ca589753ac6"
+
+# ---------------------------------------------------------------------------
+# Production environment
+# ---------------------------------------------------------------------------
+[env.production]
+name = "whisper-transcribe"
+
+routes = [
+  { pattern = "listen.silent.energy", custom_domain = true }
+]
+
+[env.production.vars]
+CORS_ORIGIN = "https://listen.silent.energy"
+
+[[env.production.rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.css", "**/*.js"]
+fallthrough = true
+
+[[env.production.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "whisper-transcriptions"
+
+[[env.production.d1_databases]]
 binding = "DB"
 database_name = "whisper-transcriptions"
 database_id = "5cc56700-c514-4456-9dc9-8ca589753ac6"
