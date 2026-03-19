@@ -1,4 +1,4 @@
-import { json, requireAuth, r2TranscriptKey, r2SegmentsKey } from "$lib/server/auth";
+import { json, requireAuth, r2TranscriptKey, r2SegmentsKey, r2AnalysisKey } from "$lib/server/auth";
 import type { RequestHandler } from "./$types";
 import type { SuccessResponse } from "$lib/types";
 
@@ -22,19 +22,30 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
   const formData = await request.formData();
   const transcript = formData.get("transcript") as File | null;
   const segments = formData.get("segments") as File | null;
+  const analysis = formData.get("analysis") as File | null;
 
   if (!transcript || !segments) {
     return json({ error: "Both 'transcript' and 'segments' fields required" }, 400);
   }
 
-  await Promise.all([
+  const uploads: Promise<void>[] = [
     env.R2_BUCKET.put(r2TranscriptKey(params.id), transcript.stream(), {
       httpMetadata: { contentType: "text/plain; charset=utf-8" },
     }),
     env.R2_BUCKET.put(r2SegmentsKey(params.id), segments.stream(), {
       httpMetadata: { contentType: "application/json; charset=utf-8" },
     }),
-  ]);
+  ];
+
+  if (analysis) {
+    uploads.push(
+      env.R2_BUCKET.put(r2AnalysisKey(params.id), analysis.stream(), {
+        httpMetadata: { contentType: "application/json; charset=utf-8" },
+      }),
+    );
+  }
+
+  await Promise.all(uploads);
 
   const audioObjects = await env.R2_BUCKET.list({ prefix: `audio/${params.id}` });
   await Promise.allSettled(audioObjects.objects.map((obj) => env.R2_BUCKET.delete(obj.key)));

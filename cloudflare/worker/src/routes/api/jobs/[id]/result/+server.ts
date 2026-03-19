@@ -1,4 +1,4 @@
-import { json, getJob, r2TranscriptKey, r2SegmentsKey } from "$lib/server/auth";
+import { json, getJob, r2TranscriptKey, r2SegmentsKey, r2AnalysisKey } from "$lib/server/auth";
 import type { RequestHandler } from "./$types";
 import type { TranscriptResult } from "$lib/types";
 
@@ -26,9 +26,10 @@ export const GET: RequestHandler = async ({ params, platform }) => {
     });
   }
 
-  const [transcriptObj, segmentsObj] = await Promise.all([
+  const [transcriptObj, segmentsObj, analysisObj] = await Promise.all([
     env.R2_BUCKET.get(r2TranscriptKey(params.id)),
     env.R2_BUCKET.get(r2SegmentsKey(params.id)),
+    env.R2_BUCKET.get(r2AnalysisKey(params.id)),
   ]);
 
   if (!transcriptObj || !segmentsObj) {
@@ -37,12 +38,14 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 
   const transcript = await transcriptObj.text();
   const segments = await segmentsObj.json();
+  const analysis = analysisObj ? await analysisObj.json() : null;
 
   const body: TranscriptResult = {
     id: params.id,
     status: "completed",
     transcript,
     segments: segments as unknown[],
+    analysis: analysis as unknown,
   };
 
   return json(body);

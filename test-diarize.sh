@@ -40,7 +40,8 @@ chmod 777 "$TMPDIR/output"
 docker run --rm --gpus all \
   -v "$TMPDIR/input:/input:ro" \
   -v "$TMPDIR/output:/output:rw" \
-  -e DIARIZE=true \
+  -v "$HOME/.whisper-cache:/home/ubuntu/.cache:rw" \
+  -e ANALYSIS=diarize \
   -e HF_TOKEN="$HF_TOKEN" \
   "$IMAGE" 2>&1
 
@@ -85,7 +86,8 @@ chmod 777 "$TMPDIR/output"
 docker run --rm --gpus all \
   -v "$TMPDIR/input:/input:ro" \
   -v "$TMPDIR/output:/output:rw" \
-  "$IMAGE" 2>&1 | grep -E '(Transcribing|Segments|Elapsed|Diariz)'
+  -v "$HOME/.whisper-cache:/home/ubuntu/.cache:rw" \
+  "$IMAGE" 2>&1 | grep -E '(Transcribing|Transcribe|Segments|Elapsed|Diariz)'
 
 if [ ! -f "$TMPDIR/output/segments.json" ]; then
   echo "FAIL: segments.json not found"

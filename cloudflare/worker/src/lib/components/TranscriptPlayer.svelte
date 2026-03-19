@@ -1,7 +1,11 @@
 <script lang="ts">
-  import type { Segment, Word } from "$lib/types";
+  import type { Segment, Word, Analysis } from "$lib/types";
 
-  let { segments, audioEl }: { segments: Segment[]; audioEl?: HTMLAudioElement | null } = $props();
+  let { segments, audioEl, analysis }: {
+    segments: Segment[];
+    audioEl?: HTMLAudioElement | null;
+    analysis?: Analysis | null;
+  } = $props();
 
   const SPEAKER_COLORS = [
     "#0a84ff",
@@ -14,28 +18,48 @@
     "#63e6e2",
   ];
 
+  const EMOTION_COLORS: Record<string, string> = {
+    neutral: "#86868b",
+    happy: "#30d158",
+    sad: "#0a84ff",
+    angry: "#ff375f",
+  };
+
   let activeWordIdx = $state(-1);
   let activeSegIdx = $state(-1);
   let wordProgress = $state(0);
-  let allWords: Array<{ word: string; start: number; end: number; segIdx: number; speaker?: string }> = $state([]);
+  let allWords: Array<{ word: string; start: number; end: number; segIdx: number; speaker?: string; emotion?: { label: string; score: number } }> = $state([]);
   let scrollContainer: HTMLDivElement | null = $state(null);
   let speakerColorMap = $state<Map<string, string>>(new Map());
   let speakerList: string[] = $state([]);
   let hasSpeakers = $state(false);
+  let hasEmotions = $state(false);
+  let hasVad = $state(false);
 
   $effect(() => {
     allWords = [];
     speakerColorMap = new Map();
     hasSpeakers = false;
+    hasEmotions = false;
+    hasVad = false;
     if (!segments) return;
 
     let colorIdx = 0;
     const speakers = new Set<string>();
     segments.forEach((seg: Segment, segIdx: number) => {
       if (seg.speaker) speakers.add(seg.speaker);
+      if (seg.emotion) hasEmotions = true;
+      if (seg.speech_ratio !== undefined) hasVad = true;
       if (seg.words) {
         seg.words.forEach((w: Word) => {
-          allWords.push({ word: w.word, start: w.start, end: w.end, segIdx, speaker: seg.speaker });
+          allWords.push({
+            word: w.word,
+            start: w.start,
+            end: w.end,
+            segIdx,
+            speaker: seg.speaker,
+            emotion: seg.emotion,
+          });
         });
       }
     });
@@ -127,11 +151,36 @@
     const idx = speakerList.indexOf(speaker);
     return idx >= 0 ? `Speaker ${idx + 1}` : speaker;
   }
+
+  function emotionColor(label: string): string {
+    return EMOTION_COLORS[label] || "#86868b";
+  }
 </script>
 
 {#if allWords.length === 0}
   <p class="no-data">No word-level timestamps available.</p>
 {:else}
+  {#if analysis}
+    <div class="analysis-summary">
+      {#if analysis.audio_tags?.length}
+        <div class="tags-row">
+          {#each analysis.audio_tags.slice(0, 5) as tag}
+            <span class="audio-tag">{tag.label} <span class="tag-score">{(tag.score * 100).toFixed(0)}%</span></span>
+          {/each}
+        </div>
+      {/if}
+      {#if analysis.vad}
+        <span class="vad-stat">Speech: {(analysis.vad.speech_ratio * 100).toFixed(0)}%</span>
+      {/if}
+      {#if analysis.language_id}
+        <span class="vad-stat">Language: {analysis.language_id.label} ({(analysis.language_id.score * 100).toFixed(0)}%)</span>
+      {/if}
+      {#if analysis.pipeline_duration}
+        <span class="vad-stat">Processed in {analysis.pipeline_duration}s</span>
+      {/if}
+    </div>
+  {/if}
+
   {#if hasSpeakers}
     <div class="speaker-legend">
       {#each speakerList as speaker}
@@ -160,7 +209,9 @@
         class:future={i > activeWordIdx}
         data-word-idx={i}
         onclick={() => seekTo(w)}
-        style={i === activeWordIdx ? `--sweep: ${wordProgress * 100}%` : ""}
+        style={i === activeWordIdx
+          ? `--sweep: ${wordProgress * 100}%`
+          : w.emotion ? `--emotion-color: ${emotionColor(w.emotion.label)}` : ""}
       >{w.word}</span>
     {/each}
   </div>
@@ -171,6 +222,47 @@
     color: var(--text-muted);
     font-size: 0.875rem;
     font-style: italic;
+  }
+
+  .analysis-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.5rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.8rem;
+  }
+
+  .tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .audio-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .tag-score {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+  }
+
+  .vad-stat {
+    color: var(--text-muted);
+    font-size: 0.75rem;
   }
 
   .speaker-legend {
@@ -273,6 +365,11 @@
     background-color: transparent;
   }
 
+  .word:not(.active)[style*="--emotion-color"] {
+    border-bottom: 2px solid var(--emotion-color, transparent);
+    padding-bottom: 0.05em;
+  }
+
   @media (max-width: 480px) {
     .transcript-scroll {
       font-size: 1rem;
@@ -281,6 +378,10 @@
     }
 
     .speaker-legend {
+      padding: 0.375rem 0.75rem;
+    }
+
+    .analysis-summary {
       padding: 0.375rem 0.75rem;
     }
   }

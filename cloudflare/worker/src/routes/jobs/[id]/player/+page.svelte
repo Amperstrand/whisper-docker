@@ -1,6 +1,6 @@
 <script lang="ts">
   import TranscriptPlayer from "$lib/components/TranscriptPlayer.svelte";
-  import type { Segment } from "$lib/types";
+  import type { Segment, Analysis } from "$lib/types";
 
   interface PageData {
     job: {
@@ -9,6 +9,7 @@
       original_filename: string;
     } | null;
     segments: Segment[] | null;
+    analysis: Analysis | null;
     audioUrl: string | null;
   }
 
@@ -60,7 +61,7 @@
       </div>
     {/if}
 
-    <TranscriptPlayer segments={data.segments} audioEl={audioEl} />
+    <TranscriptPlayer segments={data.segments} audioEl={audioEl} analysis={data.analysis} />
   </section>
 {/if}
 

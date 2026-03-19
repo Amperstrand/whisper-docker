@@ -61,6 +61,10 @@ export function r2SegmentsKey(jobId: string): string {
   return `results/${jobId}/segments.json`;
 }
 
+export function r2AnalysisKey(jobId: string): string {
+  return `results/${jobId}/analysis.json`;
+}
+
 export async function resetStaleJobs(db: D1Database): Promise<void> {
   await db
     .prepare(

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
   import { onDestroy } from "svelte";
   import TranscriptPlayer from "$lib/components/TranscriptPlayer.svelte";
-  import type { Segment } from "$lib/types";
+  import type { Segment, Analysis } from "$lib/types";
 
   type Phase = "idle" | "playing" | "uploading" | "transcribing" | "transcribed" | "error";
 
@@ -10,6 +9,21 @@
   const MAX_SIZE = 100 * 1024 * 1024;
   const HISTORY_KEY = "whisper-jobs";
   const MAX_HISTORY = 20;
+
+  interface AnalysisOption {
+    key: string;
+    label: string;
+    hint: string;
+    speed: string;
+  }
+
+  const ANALYSIS_OPTIONS: AnalysisOption[] = [
+    { key: "diarize", label: "Speaker diarization", hint: "Identify who spoke when", speed: "~2.5x realtime" },
+    { key: "emotion", label: "Emotion detection", hint: "Detect emotions in speech", speed: "~10x realtime" },
+    { key: "classify", label: "Audio classification", hint: "Tag audio content (music, applause, etc.)", speed: "~10x realtime" },
+    { key: "language_id", label: "Language detection", hint: "Identify spoken language", speed: "~50x realtime" },
+    { key: "vad", label: "Detailed VAD", hint: "Speech vs silence breakdown", speed: "instant" },
+  ];
 
   let phase: Phase = $state("idle");
   let file: File | null = $state(null);
@@ -21,8 +35,9 @@
   let jobId: string | null = $state(null);
   let jobStatus = $state("");
   let segments: Segment[] | null = $state(null);
+  let analysis: Analysis | null = $state(null);
   let canPlay = $state(true);
-  let diarize = $state(false);
+  let analysisFlags = $state<Record<string, boolean>>({});
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   function getExt(name: string): string {
@@ -65,7 +80,9 @@
     jobId = null;
     jobStatus = "";
     segments = null;
+    analysis = null;
     canPlay = true;
+    analysisFlags = {};
     const input = document.getElementById("file-input") as HTMLInputElement | null;
     if (input) input.value = "";
   }
@@ -120,8 +137,11 @@
 
     const formData = new FormData();
     formData.append("file", file);
-    if (diarize) {
-      formData.append("options", JSON.stringify({ diarize: true }));
+    const activeFlags = ANALYSIS_OPTIONS.filter((o) => analysisFlags[o.key]);
+    if (activeFlags.length > 0) {
+      const opts: Record<string, boolean> = {};
+      for (const o of activeFlags) opts[o.key] = true;
+      formData.append("options", JSON.stringify(opts));
     }
 
     try {
@@ -193,6 +213,7 @@
       if (!res.ok) return;
       const data = await res.json();
       segments = (data.segments as Segment[]) || null;
+      analysis = (data.analysis as Analysis) || null;
       phase = "transcribed";
     } catch {
       phase = "error";
@@ -256,21 +277,25 @@
     </div>
 
     {#if phase === "playing"}
-      <div class="actions">
-        <label class="toggle-row">
-          <span class="toggle-label">Speaker diarization</span>
-          <button
-            type="button"
-            class="toggle-switch"
-            class:toggle-on={diarize}
-            onclick={() => (diarize = !diarize)}
-            role="switch"
-            aria-checked={diarize}
-          >
-            <span class="toggle-knob"></span>
-          </button>
-          <span class="toggle-hint">Identify who spoke when</span>
-        </label>
+      <div class="analysis-panel">
+        <div class="analysis-header">Analysis options</div>
+        {#each ANALYSIS_OPTIONS as opt}
+          <label class="toggle-row">
+            <span class="toggle-label">{opt.label}</span>
+            <button
+              type="button"
+              class="toggle-switch"
+              class:toggle-on={analysisFlags[opt.key]}
+              onclick={() => (analysisFlags[opt.key] = !analysisFlags[opt.key])}
+              role="switch"
+              aria-checked={!!analysisFlags[opt.key]}
+              aria-label={opt.label}
+            >
+              <span class="toggle-knob"></span>
+            </button>
+            <span class="toggle-hint">{opt.hint} ({opt.speed})</span>
+          </label>
+        {/each}
         <button class="btn-primary" onclick={startTranscription}>
           Transcribe
         </button>
@@ -317,7 +342,7 @@
     {/if}
 
     {#if phase === "transcribed" && segments && audioEl}
-      <TranscriptPlayer {segments} {audioEl} />
+      <TranscriptPlayer {segments} {audioEl} {analysis} />
     {/if}
 
     {#if phase === "error"}
@@ -592,16 +617,38 @@
     gap: 0.75rem;
   }
 
+  .analysis-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .analysis-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.125rem;
+  }
+
   .toggle-row {
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    padding: 0.375rem 0.25rem;
+    border-radius: 6px;
     cursor: pointer;
     user-select: none;
+    transition: background-color 0.1s;
+  }
+
+  .toggle-row:hover {
+    background: var(--bg-hover);
   }
 
   .toggle-label {
@@ -647,13 +694,14 @@
     transform: translateX(18px);
   }
 
+  .analysis-panel .btn-primary {
+    margin-top: 0.5rem;
+    align-self: flex-start;
+  }
+
   @media (max-width: 480px) {
     .toggle-hint {
       display: none;
-    }
-
-    .toggle-row {
-      padding: 0.5rem;
     }
   }
 </style>

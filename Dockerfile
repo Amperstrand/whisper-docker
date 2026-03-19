@@ -4,6 +4,10 @@ FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Standardize cache paths so all model downloads land in the mounted host cache.
+ENV TORCH_HOME=/home/ubuntu/.cache/torch
+ENV HF_HOME=/home/ubuntu/.cache/huggingface
+
 # Install Python 3, pip, and ffmpeg (required by faster-whisper for audio decoding).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -13,24 +17,24 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install faster-whisper with all dependencies.
-# requests is needed for model download; huggingface-hub for model caching.
-# pyannote.audio + torchaudio are for optional speaker diarization (GPU-accelerated).
+# Core transcription + optional analysis pipeline dependencies.
+# huggingface_hub pinned for pyannote compatibility.
 RUN pip3 install --no-cache-dir --break-system-packages \
     requests \
     "huggingface_hub==0.23.5" \
     faster-whisper==1.2.1 \
     torchaudio==2.6.0 \
     pyannote.audio==3.3.2 \
-    matplotlib
+    matplotlib \
+    speechbrain \
+    transformers \
+    timm
 
 # Use existing 'ubuntu' user from base image (uid 1000).
-# Copy the transcription script with proper ownership.
 COPY --chown=ubuntu:ubuntu transcribe.py /app/transcribe.py
 
 WORKDIR /app
 
-# Run as non-root user for security.
 USER ubuntu
 
 ENTRYPOINT ["python3", "transcribe.py"]

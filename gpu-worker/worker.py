@@ -190,30 +190,31 @@ def download_audio(job_id: str) -> tuple[str, Path]:
     return safe_filename, tmp_dir
 
 
-def transcribe_docker(input_path: Path, output_dir: Path, diarize: bool = False) -> None:
+def transcribe_docker(input_path: Path, output_dir: Path, analysis_flags: list[str]) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     dockerfile = repo_root / "Dockerfile"
     if not dockerfile.exists():
         raise RuntimeError(f"Dockerfile not found at {dockerfile}")
 
     image_name = "whisper-docker-transcribe"
-    model_cache_dir = Path.home() / ".whisper-model-cache"
-    model_cache_dir.mkdir(mode=0o755, exist_ok=True)
+    cache_dir = Path.home() / ".whisper-cache"
+    cache_dir.mkdir(mode=0o755, exist_ok=True)
 
     docker_cmd = [
         "docker", "run", "--rm", "--gpus", "all",
-        "-v", f"{model_cache_dir}:/home/ubuntu/.cache/huggingface:rw",
+        "-v", f"{cache_dir}:/home/ubuntu/.cache:rw",
         "-v", f"{input_path}:/input/{input_path.name}:ro",
         "-v", f"{output_dir}:/output:rw",
     ]
 
-    if diarize and CONFIG["hf_token"]:
-        docker_cmd.extend([
-            "-e", "DIARIZE=true",
-            "-e", f"HF_TOKEN={CONFIG['hf_token']}",
-        ])
-    elif diarize:
-        log.warning("Diarization requested but HF_TOKEN not configured — skipping")
+    if analysis_flags:
+        docker_cmd.extend(["-e", f"ANALYSIS={','.join(analysis_flags)}"])
+
+    needs_hf = any(f in analysis_flags for f in ("diarize",))
+    if needs_hf and CONFIG["hf_token"]:
+        docker_cmd.extend(["-e", f"HF_TOKEN={CONFIG['hf_token']}"])
+    elif needs_hf:
+        log.warning("Analysis requires HF_TOKEN but it's not configured — those steps will be skipped")
 
     docker_cmd.append(image_name)
 
@@ -267,18 +268,35 @@ def transcribe_direct(input_path: Path, output_dir: Path) -> None:
         json.dump(segments_data, f, indent=2, ensure_ascii=False)
 
 
-def upload_results(job_id: str, transcript_path: Path, segments_path: Path) -> None:
-    with open(transcript_path, "rb") as t, open(segments_path, "rb") as s:
+def upload_results(job_id: str, transcript_path: Path, segments_path: Path, analysis_path: Path | None = None) -> None:
+    files = {
+        "transcript": ("transcript.txt", transcript_path, "text/plain"),
+        "segments": ("segments.json", segments_path, "application/json"),
+    }
+    if analysis_path and analysis_path.exists():
+        files["analysis"] = ("analysis.json", analysis_path, "application/json")
+
+    file_handles = []
+    try:
+        for key, (fname, fpath, ctype) in files.items():
+            file_handles.append((key, (fname, open(fpath, "rb"), ctype)))
         resp = request_with_retry(
             "POST",
             f"{CONFIG['api_url']}/api/jobs/{job_id}/results",
             headers=api_headers(),
-            files={"transcript": ("transcript.txt", t, "text/plain"), "segments": ("segments.json", s, "application/json")},
+            files=dict(file_handles),
             timeout=120,
         )
+    finally:
+        for _, (_, fh, _) in file_handles:
+            fh.close()
+
     if not resp.json().get("success"):
         raise RuntimeError(f"Upload failed: {resp.text}")
     log.info("Results uploaded for job %s", job_id)
+
+
+ANALYSIS_OPTIONS = {"diarize", "vad", "emotion", "classify", "language_id"}
 
 
 def process_job(job: dict) -> None:
@@ -289,12 +307,13 @@ def process_job(job: dict) -> None:
         options = json.loads(options_raw)
     except (json.JSONDecodeError, TypeError):
         options = {}
-    diarize = bool(options.get("diarize", False))
+
+    analysis_flags = sorted(k for k in ANALYSIS_OPTIONS if options.get(k, False))
 
     timer = Timer()
     log.info("=== Processing job %s: %s ===", job_id, filename)
-    if diarize:
-        log.info("  Diarization: enabled")
+    if analysis_flags:
+        log.info("  Analysis: %s", ", ".join(analysis_flags))
 
     if not claim_job(job_id):
         log.warning("Failed to claim job %s — skipping", job_id)
@@ -311,18 +330,19 @@ def process_job(job: dict) -> None:
         output_dir.mkdir(mode=0o700)
 
         if CONFIG["mode"] == "docker":
-            transcribe_docker(audio_path, output_dir, diarize=diarize)
+            transcribe_docker(audio_path, output_dir, analysis_flags)
         else:
             transcribe_direct(audio_path, output_dir)
         timer.tick("transcribe")
 
         transcript_path = output_dir / "transcript.txt"
         segments_path = output_dir / "segments.json"
+        analysis_path = output_dir / "analysis.json"
 
         if not transcript_path.exists() or not segments_path.exists():
             raise RuntimeError("Transcription output files not found")
 
-        upload_results(job_id, transcript_path, segments_path)
+        upload_results(job_id, transcript_path, segments_path, analysis_path)
         timer.tick("upload")
 
         log.info("=== Job %s completed ===\n%s", job_id, timer.summary())
