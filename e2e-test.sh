@@ -57,6 +57,17 @@ assert_not_empty() {
     fi
 }
 
+assert_contains() {
+    local name="$1" haystack="$2" needle="$3"
+    if echo "$haystack" | grep -qi "$needle"; then
+        echo -e "  ${GREEN}PASS${NC} $name"
+        pass=$((pass + 1))
+    else
+        echo -e "  ${RED}FAIL${NC} $name (missing: $needle)"
+        fail=$((fail + 1))
+    fi
+}
+
 echo -e "${YELLOW}=== E2E Transcription Test ===${NC}"
 echo "  URL: $BASE_URL"
 
@@ -146,6 +157,11 @@ echo -e "  ${GREEN}PASS${NC} Total words: $word_count"
 
 transcript=$(echo "$result_resp" | python3 -c "import sys,json; print((json.load(sys.stdin).get('transcript','') or '').strip())" 2>/dev/null)
 assert_not_empty "Result has transcript" "$transcript"
+
+# JFK inaugural excerpt — verify key phrases are actually transcribed
+for phrase in "fellow" "country" "ask"; do
+    assert_contains "Transcript contains '$phrase'" "$transcript" "$phrase"
+done
 
 # Step 4: Cleanup — delete the test job
 echo ""
