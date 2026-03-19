@@ -1,13 +1,10 @@
-import { json, requireAuth, resetStaleJobs, validateFile, r2AudioKey } from "$lib/server/auth";
+import { json, resetStaleJobs, validateFile, r2AudioKey } from "$lib/server/auth";
 import type { RequestHandler } from "./$types";
 import type { Job, CreateJobResponse, PendingJobsResponse } from "$lib/types";
 
 export const GET: RequestHandler = async ({ request, platform }) => {
   const env = platform?.env;
   if (!env) return json({ error: "Service unavailable" }, 503);
-
-  const authErr = requireAuth(request, env);
-  if (authErr) return authErr;
 
   const url = new URL(request.url);
   const status = url.searchParams.get("status");

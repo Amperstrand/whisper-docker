@@ -110,7 +110,7 @@ test_site() {
     assert "GET audio without auth returns 401" "$(curl -s -o /dev/null -w '%{http_code}' "$url/api/jobs/00000000-0000-0000-0000-000000000000/audio")" "401"
     assert "POST jobs without file returns 400" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url/api/jobs")" "400"
 
-    assert "GET jobs without auth returns 401" "$(curl -s -o /dev/null -w '%{http_code}' "$url/api/jobs?status=pending")" "401"
+    assert "GET jobs list returns 200" "$(curl -s -o /dev/null -w '%{http_code}' "$url/api/jobs?status=pending")" "200"
 }
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "production" ]; then

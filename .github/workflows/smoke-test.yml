@@ -25,6 +25,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run e2e transcription test
-        env:
-          WORKER_TOKEN: ${{ secrets.WORKER_TOKEN }}
         run: bash e2e-test.sh production

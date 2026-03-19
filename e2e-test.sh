@@ -9,8 +9,7 @@
 #   ./e2e-test.sh                    # Test production (default)
 #   ./e2e-test.sh https://custom.example.com  # Test custom URL
 #
-# Required env:
-#   WORKER_TOKEN  - API bearer token for GPU worker authentication
+# No credentials required — all endpoints used by this test are public.
 #
 set -euo pipefail
 
@@ -33,13 +32,9 @@ if [ ! -f "$SAMPLE_FILE" ]; then
     exit 1
 fi
 
-if [ -z "${WORKER_TOKEN:-}" ]; then
-    echo -e "${RED}FAIL${NC} WORKER_TOKEN environment variable not set"
-    echo "  Set it with: export WORKER_TOKEN=<token>"
-    exit 1
-fi
-
-AUTH_HEADER="Authorization: Bearer $WORKER_TOKEN"
+# No auth required — upload, status polling, result fetching, and cleanup
+# are all public endpoints. Only GPU worker operations (claim, upload results,
+# download audio) require authentication.
 
 assert_eq() {
     local name="$1" actual="$2" expected="$3"
@@ -103,7 +98,6 @@ echo ""
 # Step 1: Upload sample audio
 echo "Step 1: Uploading sample audio..."
 upload_resp=$(curl -s -X POST "$BASE_URL/api/jobs" \
-    -H "$AUTH_HEADER" \
     -F "file=@$SAMPLE_FILE")
 
 job_id=$(echo "$upload_resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
@@ -122,7 +116,7 @@ completed=false
 status=""
 
 while [ "$elapsed" -lt "$MAX_WAIT" ]; do
-    job_resp=$(curl -s "$BASE_URL/api/jobs/$job_id" -H "$AUTH_HEADER")
+    job_resp=$(curl -s "$BASE_URL/api/jobs/$job_id")
     status=$(echo "$job_resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('job',{}).get('status',''))" 2>/dev/null)
     
     if [ "$status" = "completed" ]; then
@@ -153,7 +147,7 @@ fi
 # Step 3: Fetch and verify result
 echo ""
 echo "Step 3: Fetching and verifying result..."
-result_resp=$(curl -s "$BASE_URL/api/jobs/$job_id/result" -H "$AUTH_HEADER")
+result_resp=$(curl -s "$BASE_URL/api/jobs/$job_id/result")
 
 assert_json_field "Result has status" "$result_resp" "status"
 assert_eq "Result status is completed" "$(echo "$result_resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)" "completed"
@@ -180,7 +174,7 @@ assert_not_contains "Result has transcript" "$(echo "$transcript" | head -c 100)
 # Step 5: Cleanup — delete the test job
 echo ""
 echo "Step 4: Cleaning up test job..."
-delete_status=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE_URL/api/jobs/$job_id" -H "$AUTH_HEADER")
+delete_status=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE_URL/api/jobs/$job_id")
 assert_eq "Delete job succeeds" "$delete_status" "200"
 
 # Summary
