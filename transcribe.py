@@ -98,11 +98,15 @@ def main() -> None:
             try:
                 from pyannote.audio import Pipeline
 
+                import torch
+                _orig_load = torch.load
+                torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, "weights_only": False})
+
                 pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
                     use_auth_token=hf_token,
                 )
-                pipeline.to(__import__("torch").device("cuda"))
+                pipeline.to(torch.device("cuda"))
 
                 diarization = pipeline(audio_path)
 
