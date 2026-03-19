@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, tick } from "svelte";
   import type { Segment, Word, Analysis } from "$lib/types";
 
   let { segments, audioEl, analysis }: {
@@ -25,20 +26,18 @@
     angry: "#ff375f",
   };
 
-  let activeWordIdx = $state(-1);
-  let activeSegIdx = $state(-1);
-  let wordProgress = $state(0);
   let allWords: Array<{ word: string; start: number; end: number; segIdx: number; speaker?: string; emotion?: { label: string; score: number } }> = $state([]);
   let scrollContainer: HTMLDivElement | null = $state(null);
-  let speakerColorMap = $state<Map<string, string>>(new Map());
-  let speakerList: string[] = $state([]);
-  let hasSpeakers = $state(false);
-  let hasEmotions = $state(false);
-  let hasVad = $state(false);
+  let speakerColorMap: Map<string, string> = new Map();
+  let speakerList: string[] = [];
+  let hasSpeakers = false;
+  let hasEmotions = false;
+  let hasVad = false;
 
   $effect(() => {
     allWords = [];
     speakerColorMap = new Map();
+    speakerList = [];
     hasSpeakers = false;
     hasEmotions = false;
     hasVad = false;
@@ -70,10 +69,6 @@
       speakerColorMap.set(speaker, SPEAKER_COLORS[colorIdx % SPEAKER_COLORS.length]);
       colorIdx++;
     }
-
-    activeWordIdx = -1;
-    activeSegIdx = -1;
-    wordProgress = 0;
   });
 
   function findCurrentWordIdx(time: number): number {
@@ -88,48 +83,97 @@
     return -1;
   }
 
-  $effect(() => {
-    if (!audioEl) return;
-    let rafId: number;
-    let lastScrolledIdx = -1;
+  onMount(async () => {
+    await tick();
+    const audio = document.querySelector("audio") as HTMLAudioElement | null;
+    if (!audio) return;
 
-    function tick() {
-      if (!audioEl) return;
-      const time = audioEl.currentTime;
-      const idx = findCurrentWordIdx(time);
+    const container = document.querySelector(".transcript-scroll");
+    if (!container) return;
 
-      if (idx >= 0) {
-        const w = allWords[idx];
-        const duration = w.end - w.start;
-        wordProgress = duration > 0 ? (time - w.start) / duration : 1;
-        activeWordIdx = idx;
-        activeSegIdx = w.segIdx;
-      } else {
-        wordProgress = 0;
-        activeWordIdx = -1;
-        activeSegIdx = -1;
+    const words = [...allWords];
+    if (words.length === 0) return;
+
+    function findIdx(time: number): number {
+      let lo = 0;
+      let hi = words.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (words[mid].start <= time && time < words[mid].end) return mid;
+        if (words[mid].end <= time) lo = mid + 1;
+        else hi = mid - 1;
       }
+      return -1;
+    }
 
-      if (idx >= 0 && idx !== lastScrolledIdx) {
-        lastScrolledIdx = idx;
-        const el = document.querySelector(`[data-word-idx="${idx}"]`);
-        if (el && scrollContainer) {
-          const containerRect = scrollContainer.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          const elCenter = elRect.top + elRect.height / 2;
-          const containerCenter = containerRect.top + containerRect.height / 2;
-          const diff = elCenter - containerCenter;
-          if (Math.abs(diff) > containerRect.height * 0.3) {
-            scrollContainer.scrollBy({ top: diff, behavior: "smooth" });
+    let rafId: number;
+    let lastActiveIdx = -1;
+
+    function frame() {
+      const time = audio.currentTime;
+      const idx = findIdx(time);
+
+      if (idx !== lastActiveIdx) {
+        if (lastActiveIdx >= 0) {
+          const prev = container.querySelector(`[data-word-idx="${lastActiveIdx}"]`) as HTMLElement | null;
+          if (prev) {
+            prev.classList.remove("active", "in-active-segment");
+            prev.style.removeProperty("--sweep");
+          }
+        }
+
+        lastActiveIdx = idx;
+        updateWordClasses(idx);
+
+        if (idx >= 0) {
+          const el = container.querySelector(`[data-word-idx="${idx}"]`) as HTMLElement | null;
+          if (el) {
+            el.classList.add("active", "in-active-segment");
+            smartScroll(el);
           }
         }
       }
 
-      rafId = requestAnimationFrame(tick);
+      if (idx >= 0) {
+        const el = container.querySelector(`[data-word-idx="${idx}"]`) as HTMLElement | null;
+        if (el) {
+          const w = words[idx];
+          const duration = w.end - w.start;
+          const progress = duration > 0 ? (time - w.start) / duration : 1;
+          el.style.setProperty("--sweep", `${progress * 100}%`);
+        }
+      }
+
+      rafId = requestAnimationFrame(frame);
     }
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    function updateWordClasses(activeIdx: number) {
+      const wordEls = container.querySelectorAll(".word");
+      wordEls.forEach((wordEl, i) => {
+        wordEl.classList.remove("active", "in-active-segment", "past", "future");
+        if (i < activeIdx) wordEl.classList.add("past");
+        else if (i > activeIdx) wordEl.classList.add("future");
+        else if (i === activeIdx) wordEl.classList.add("active", "in-active-segment");
+      });
+    }
+
+    function smartScroll(wordEl: HTMLElement) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect = wordEl.getBoundingClientRect();
+      const elCenter = elRect.top + elRect.height / 2;
+      const containerCenter = containerRect.top + containerRect.height / 2;
+      const diff = elCenter - containerCenter;
+      if (Math.abs(diff) > containerRect.height * 0.3) {
+        container.scrollBy({ top: diff, behavior: "smooth" });
+      }
+    }
+
+    audio.addEventListener("timeupdate", frame);
+    rafId = requestAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(rafId);
+      audio.removeEventListener("timeupdate", frame);
+    };
   });
 
   function seekTo(word: typeof allWords[number]) {
@@ -203,15 +247,9 @@
       {/if}
       <span
         class="word"
-        class:active={i === activeWordIdx}
-        class:in-active-segment={w.segIdx === activeSegIdx}
-        class:past={i < activeWordIdx}
-        class:future={i > activeWordIdx}
         data-word-idx={i}
         onclick={() => seekTo(w)}
-        style={i === activeWordIdx
-          ? `--sweep: ${wordProgress * 100}%`
-          : w.emotion ? `--emotion-color: ${emotionColor(w.emotion.label)}` : ""}
+        style={w.emotion ? `--emotion-color: ${emotionColor(w.emotion.label)}` : ""}
       >{w.word}</span>
     {/each}
   </div>

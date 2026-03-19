@@ -25,3 +25,5 @@ dist/
 # Environment files (secrets, local config)
 .env
 .env.local
+test-results/
+playwright-report/
