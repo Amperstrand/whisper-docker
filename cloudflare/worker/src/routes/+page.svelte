@@ -22,6 +22,7 @@
   let jobStatus = $state("");
   let segments: Segment[] | null = $state(null);
   let canPlay = $state(true);
+  let diarize = $state(false);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   function getExt(name: string): string {
@@ -119,6 +120,9 @@
 
     const formData = new FormData();
     formData.append("file", file);
+    if (diarize) {
+      formData.append("options", JSON.stringify({ diarize: true }));
+    }
 
     try {
       const xhr = new XMLHttpRequest();
@@ -253,6 +257,20 @@
 
     {#if phase === "playing"}
       <div class="actions">
+        <label class="toggle-row">
+          <span class="toggle-label">Speaker diarization</span>
+          <button
+            type="button"
+            class="toggle-switch"
+            class:toggle-on={diarize}
+            onclick={() => (diarize = !diarize)}
+            role="switch"
+            aria-checked={diarize}
+          >
+            <span class="toggle-knob"></span>
+          </button>
+          <span class="toggle-hint">Identify who spoke when</span>
+        </label>
         <button class="btn-primary" onclick={startTranscription}>
           Transcribe
         </button>
@@ -429,11 +447,6 @@
     margin: 0;
   }
 
-  .actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
   .btn-primary {
     padding: 0.625rem 1.5rem;
     background: var(--accent);
@@ -571,5 +584,76 @@
     margin-top: 0.75rem;
     color: var(--danger);
     font-size: 0.875rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .toggle-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: var(--border);
+    border: none;
+    border-radius: 11px;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+  }
+
+  .toggle-switch.toggle-on {
+    background: var(--accent);
+  }
+
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    pointer-events: none;
+  }
+
+  .toggle-switch.toggle-on .toggle-knob {
+    transform: translateX(18px);
+  }
+
+  @media (max-width: 480px) {
+    .toggle-hint {
+      display: none;
+    }
+
+    .toggle-row {
+      padding: 0.5rem;
+    }
   }
 </style>

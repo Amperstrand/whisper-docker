@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at TEXT,
     completed_at TEXT,
     worker_id TEXT,
-    error_message TEXT
+    error_message TEXT,
+    options TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);

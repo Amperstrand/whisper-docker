@@ -15,10 +15,13 @@ RUN apt-get update && \
 
 # Install faster-whisper with all dependencies.
 # requests is needed for model download; huggingface-hub for model caching.
+# pyannote.audio + torchaudio are for optional speaker diarization (GPU-accelerated).
 RUN pip3 install --no-cache-dir --break-system-packages \
     requests \
     huggingface_hub \
-    faster-whisper==1.2.1
+    faster-whisper==1.2.1 \
+    torchaudio==2.6.0 \
+    pyannote.audio==3.3.2
 
 # Use existing 'ubuntu' user from base image (uid 1000).
 # Copy the transcription script with proper ownership.

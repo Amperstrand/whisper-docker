@@ -10,6 +10,7 @@ export interface Job {
   completed_at: string | null;
   worker_id: string | null;
   error_message: string | null;
+  options: string | null;
 }
 
 export interface CreateJobResponse {
@@ -17,6 +18,7 @@ export interface CreateJobResponse {
   status: string;
   original_filename: string;
   file_size: number;
+  options?: string | null;
 }
 
 export interface JobResponse {
@@ -43,6 +45,7 @@ export interface Segment {
   start: number;
   end: number;
   text: string;
+  speaker?: string;
   words?: Word[];
 }
 

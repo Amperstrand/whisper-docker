@@ -3,22 +3,50 @@
 
   let { segments, audioEl }: { segments: Segment[]; audioEl?: HTMLAudioElement | null } = $props();
 
+  const SPEAKER_COLORS = [
+    "#0a84ff",
+    "#ff9f0a",
+    "#30d158",
+    "#bf5af2",
+    "#ff375f",
+    "#64d2ff",
+    "#ffd60a",
+    "#63e6e2",
+  ];
+
   let activeWordIdx = $state(-1);
   let activeSegIdx = $state(-1);
   let wordProgress = $state(0);
-  let allWords: Array<{ word: string; start: number; end: number; segIdx: number }> = $state([]);
+  let allWords: Array<{ word: string; start: number; end: number; segIdx: number; speaker?: string }> = $state([]);
   let scrollContainer: HTMLDivElement | null = $state(null);
+  let speakerColorMap = $state<Map<string, string>>(new Map());
+  let speakerList: string[] = $state([]);
+  let hasSpeakers = $state(false);
 
   $effect(() => {
     allWords = [];
+    speakerColorMap = new Map();
+    hasSpeakers = false;
     if (!segments) return;
+
+    let colorIdx = 0;
+    const speakers = new Set<string>();
     segments.forEach((seg: Segment, segIdx: number) => {
+      if (seg.speaker) speakers.add(seg.speaker);
       if (seg.words) {
         seg.words.forEach((w: Word) => {
-          allWords.push({ word: w.word, start: w.start, end: w.end, segIdx });
+          allWords.push({ word: w.word, start: w.start, end: w.end, segIdx, speaker: seg.speaker });
         });
       }
     });
+
+    speakerList = Array.from(speakers).sort();
+    hasSpeakers = speakerList.length > 0;
+    for (const speaker of speakerList) {
+      speakerColorMap.set(speaker, SPEAKER_COLORS[colorIdx % SPEAKER_COLORS.length]);
+      colorIdx++;
+    }
+
     activeWordIdx = -1;
     activeSegIdx = -1;
     wordProgress = 0;
@@ -88,15 +116,41 @@
     if (wordIdx === 0) return true;
     return allWords[wordIdx].segIdx !== allWords[wordIdx - 1].segIdx;
   }
+
+  function isSpeakerChange(wordIdx: number): boolean {
+    if (!hasSpeakers) return false;
+    if (wordIdx === 0) return true;
+    return allWords[wordIdx].speaker !== allWords[wordIdx - 1].speaker;
+  }
+
+  function speakerLabel(speaker: string): string {
+    const idx = speakerList.indexOf(speaker);
+    return idx >= 0 ? `Speaker ${idx + 1}` : speaker;
+  }
 </script>
 
 {#if allWords.length === 0}
   <p class="no-data">No word-level timestamps available.</p>
 {:else}
+  {#if hasSpeakers}
+    <div class="speaker-legend">
+      {#each speakerList as speaker}
+        <span class="speaker-chip" style="--speaker-color: {speakerColorMap.get(speaker)}">
+          {speakerLabel(speaker)}
+        </span>
+      {/each}
+    </div>
+  {/if}
+
   <div class="transcript-scroll" bind:this={scrollContainer}>
     {#each allWords as w, i (i)}
-      {#if isSegmentStart(i)}
+      {#if isSpeakerChange(i)}
         {#if i > 0}<br />{/if}
+        {#if hasSpeakers && w.speaker}
+          <span class="speaker-inline" style="--speaker-color: {speakerColorMap.get(w.speaker)}">
+            {speakerLabel(w.speaker)}
+          </span>
+        {/if}
       {/if}
       <span
         class="word"
@@ -117,6 +171,55 @@
     color: var(--text-muted);
     font-size: 0.875rem;
     font-style: italic;
+  }
+
+  .speaker-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.5rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: none;
+  }
+
+  .speaker-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--speaker-color) 15%, transparent);
+    color: var(--speaker-color);
+    border: 1px solid color-mix(in srgb, var(--speaker-color) 30%, transparent);
+  }
+
+  .speaker-chip::before {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--speaker-color);
+  }
+
+  .speaker-inline {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--speaker-color);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 0.25rem;
+    opacity: 0.85;
+    vertical-align: middle;
+    line-height: 2.2;
   }
 
   .transcript-scroll {
@@ -175,6 +278,10 @@
       font-size: 1rem;
       line-height: 2;
       padding: 0.75rem;
+    }
+
+    .speaker-legend {
+      padding: 0.375rem 0.75rem;
     }
   }
 </style>

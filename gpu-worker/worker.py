@@ -56,6 +56,7 @@ CONFIG = {
     "whisper_model": os.environ.get("WHISPER_MODEL", "turbo"),
     "retry_max": int(os.environ.get("RETRY_MAX", "3")),
     "retry_base_delay": float(os.environ.get("RETRY_BASE_DELAY", "2")),
+    "hf_token": os.environ.get("HF_TOKEN", ""),
 }
 
 SHUTDOWN = threading.Event()
@@ -189,7 +190,7 @@ def download_audio(job_id: str) -> tuple[str, Path]:
     return safe_filename, tmp_dir
 
 
-def transcribe_docker(input_path: Path, output_dir: Path) -> None:
+def transcribe_docker(input_path: Path, output_dir: Path, diarize: bool = False) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     dockerfile = repo_root / "Dockerfile"
     if not dockerfile.exists():
@@ -199,14 +200,25 @@ def transcribe_docker(input_path: Path, output_dir: Path) -> None:
     model_cache_dir = Path.home() / ".whisper-model-cache"
     model_cache_dir.mkdir(mode=0o755, exist_ok=True)
 
+    docker_cmd = [
+        "docker", "run", "--rm", "--gpus", "all",
+        "-v", f"{model_cache_dir}:/home/ubuntu/.cache/huggingface:rw",
+        "-v", f"{input_path}:/input/{input_path.name}:ro",
+        "-v", f"{output_dir}:/output:rw",
+    ]
+
+    if diarize and CONFIG["hf_token"]:
+        docker_cmd.extend([
+            "-e", "DIARIZE=true",
+            "-e", f"HF_TOKEN={CONFIG['hf_token']}",
+        ])
+    elif diarize:
+        log.warning("Diarization requested but HF_TOKEN not configured — skipping")
+
+    docker_cmd.append(image_name)
+
     result = subprocess.run(
-        [
-            "docker", "run", "--rm", "--gpus", "all",
-            "-v", f"{model_cache_dir}:/home/ubuntu/.cache/huggingface:rw",
-            "-v", f"{input_path}:/input/{input_path.name}:ro",
-            "-v", f"{output_dir}:/output:rw",
-            image_name,
-        ],
+        docker_cmd,
         capture_output=True,
         text=True,
         timeout=1800,
@@ -272,8 +284,17 @@ def upload_results(job_id: str, transcript_path: Path, segments_path: Path) -> N
 def process_job(job: dict) -> None:
     job_id = job["id"]
     filename = job["original_filename"]
+    options_raw = job.get("options") or "{}"
+    try:
+        options = json.loads(options_raw)
+    except (json.JSONDecodeError, TypeError):
+        options = {}
+    diarize = bool(options.get("diarize", False))
+
     timer = Timer()
     log.info("=== Processing job %s: %s ===", job_id, filename)
+    if diarize:
+        log.info("  Diarization: enabled")
 
     if not claim_job(job_id):
         log.warning("Failed to claim job %s — skipping", job_id)
@@ -290,7 +311,7 @@ def process_job(job: dict) -> None:
         output_dir.mkdir(mode=0o700)
 
         if CONFIG["mode"] == "docker":
-            transcribe_docker(audio_path, output_dir)
+            transcribe_docker(audio_path, output_dir, diarize=diarize)
         else:
             transcribe_direct(audio_path, output_dir)
         timer.tick("transcribe")

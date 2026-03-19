@@ -57,12 +57,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const validated = validateFile(filename, file.size);
   if (validated instanceof Response) return validated;
 
+  const optionsRaw = formData.get("options");
+  const options = typeof optionsRaw === "string" && optionsRaw.trim() ? optionsRaw.trim() : null;
+
   const jobId = crypto.randomUUID();
 
   await env.DB.prepare(
-    `INSERT INTO jobs (id, status, original_filename, file_size, file_type, created_at, updated_at)
-     VALUES (?, 'pending', ?, ?, ?, datetime('now'), datetime('now'))`,
-  ).bind(jobId, filename, file.size, file.type || null).run();
+    `INSERT INTO jobs (id, status, original_filename, file_size, file_type, created_at, updated_at, options)
+     VALUES (?, 'pending', ?, ?, ?, datetime('now'), datetime('now'), ?)`,
+  ).bind(jobId, filename, file.size, file.type || null, options).run();
 
   await env.R2_BUCKET.put(r2AudioKey(jobId, validated.ext), file.stream(), {
     httpMetadata: { contentType: file.type || "application/octet-stream" },
@@ -73,6 +76,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     status: "pending",
     original_filename: filename,
     file_size: file.size,
+    options,
   };
 
   return json(body, 201);

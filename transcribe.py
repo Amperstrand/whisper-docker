@@ -66,15 +66,7 @@ def main() -> None:
     # Ensure output directory exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Write plain-text transcript
-    transcript_path = os.path.join(OUTPUT_DIR, "transcript.txt")
-    with open(transcript_path, "w", encoding="utf-8") as f:
-        for seg in segments:
-            f.write(seg.text.strip() + "\n")
-    print(f"Wrote:       {transcript_path}")
-
-    # Write structured JSON segments with timestamps
-    segments_path = os.path.join(OUTPUT_DIR, "segments.json")
+    # Build structured segments data (used for both output and diarization alignment)
     segments_data = []
     for seg in segments:
         seg_dict = {
@@ -94,6 +86,65 @@ def main() -> None:
             ]
         segments_data.append(seg_dict)
 
+    # Optional: speaker diarization via pyannote.audio (GPU-accelerated).
+    # Activated by DIARIZE=true env var; requires HF_TOKEN for gated model access.
+    if os.environ.get("DIARIZE") == "true":
+        hf_token = os.environ.get("HF_TOKEN", "")
+        if not hf_token:
+            print("WARNING: DIARIZE enabled but HF_TOKEN not set — skipping diarization")
+        else:
+            print("Diarizing...")
+            t1 = time.perf_counter()
+            try:
+                from pyannote.audio import Pipeline
+
+                pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=hf_token,
+                )
+                pipeline.to(__import__("torch").device("cuda"))
+
+                diarization = pipeline(audio_path)
+
+                # Map speaker labels to segments by maximum temporal overlap.
+                diarization_turns = []
+                for turn, _, speaker in diarization.itertracks(yield_label=True):
+                    diarization_turns.append(
+                        {"start": turn.start, "end": turn.end, "speaker": speaker}
+                    )
+
+                speakers_found = set()
+                for seg_dict in segments_data:
+                    seg_start = seg_dict["start"]
+                    seg_end = seg_dict["end"]
+                    best_speaker = None
+                    best_overlap = 0.0
+                    for turn in diarization_turns:
+                        overlap_start = max(seg_start, turn["start"])
+                        overlap_end = min(seg_end, turn["end"])
+                        overlap = max(0.0, overlap_end - overlap_start)
+                        if overlap > best_overlap:
+                            best_overlap = overlap
+                            best_speaker = turn["speaker"]
+                    if best_speaker and best_overlap > 0:
+                        seg_dict["speaker"] = best_speaker
+                        speakers_found.add(best_speaker)
+
+                diarize_elapsed = time.perf_counter() - t1
+                print(f"Diarization: {len(speakers_found)} speakers, {len(diarization_turns)} turns")
+                print(f"Diarize time: {diarize_elapsed:.2f}s")
+            except Exception as exc:
+                print(f"WARNING: Diarization failed — continuing without speaker labels: {exc}")
+
+    # Write plain-text transcript
+    transcript_path = os.path.join(OUTPUT_DIR, "transcript.txt")
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        for seg_dict in segments_data:
+            f.write(seg_dict["text"] + "\n")
+    print(f"Wrote:       {transcript_path}")
+
+    # Write structured JSON segments with timestamps (may include speaker labels)
+    segments_path = os.path.join(OUTPUT_DIR, "segments.json")
     with open(segments_path, "w", encoding="utf-8") as f:
         json.dump(segments_data, f, indent=2, ensure_ascii=False)
     print(f"Wrote:       {segments_path}")
