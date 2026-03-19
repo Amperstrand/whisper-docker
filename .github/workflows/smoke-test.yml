@@ -15,3 +15,16 @@ jobs:
 
       - name: Run smoke tests (production)
         run: bash smoke-test.sh production
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: smoke-test
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run e2e transcription test
+        env:
+          WORKER_TOKEN: ${{ secrets.WORKER_TOKEN }}
+        run: bash e2e-test.sh production
