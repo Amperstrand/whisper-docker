@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import type { Segment, Word, Analysis } from "$lib/types";
 
   let { segments, audioEl, analysis }: {
@@ -83,18 +83,19 @@
     return -1;
   }
 
-  onMount(async () => {
-    await tick();
+  onMount(() => {
     const audio = document.querySelector("audio") as HTMLAudioElement | null;
     if (!audio) return;
 
     const container = document.querySelector(".transcript-scroll");
     if (!container) return;
 
-    const words = [...allWords];
-    if (words.length === 0) return;
+    let words: typeof allWords = [];
+    let rafId: number;
+    let lastActiveIdx = -1;
 
     function findIdx(time: number): number {
+      if (words.length === 0) return -1;
       let lo = 0;
       let hi = words.length - 1;
       while (lo <= hi) {
@@ -106,10 +107,11 @@
       return -1;
     }
 
-    let rafId: number;
-    let lastActiveIdx = -1;
-
     function frame() {
+      if (words.length === 0 && allWords.length > 0) {
+        words = allWords.map((w) => ({ ...w }));
+      }
+
       const time = audio.currentTime;
       const idx = findIdx(time);
 

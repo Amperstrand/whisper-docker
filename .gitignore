@@ -26,4 +26,6 @@ dist/
 .env
 .env.local
 test-results/
+!test-results/karaoke-highlight.png
+!test-results/karaoke-transcript.png
 playwright-report/
