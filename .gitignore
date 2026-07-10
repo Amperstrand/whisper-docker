@@ -1,7 +1,15 @@
 output/
+output-batch/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local LLM model files
+models/
+
+# Temp batch dirs
+.batch-input/
+.batch-output/
 
 # Ignore audio files people drop into input/
 input/*.wav
@@ -29,3 +37,10 @@ test-results/
 !test-results/karaoke-highlight.png
 !test-results/karaoke-transcript.png
 playwright-report/
+
+# audio input data + build artifacts
+input/
+*.wav
+*.mp3
+*.webm
+__pycache__/

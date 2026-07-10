@@ -28,7 +28,9 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     matplotlib \
     speechbrain \
     transformers \
-    timm
+    timm \
+    && pip3 install --no-cache-dir --break-system-packages --no-deps whisperx \
+    && pip3 install --no-cache-dir --break-system-packages nltk pandas fasttext-wheel
 
 # Use existing 'ubuntu' user from base image (uid 1000).
 COPY --chown=ubuntu:ubuntu transcribe.py /app/transcribe.py

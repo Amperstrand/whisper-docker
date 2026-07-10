@@ -2,17 +2,52 @@ services:
   transcribe:
     build: .
     volumes:
-      - ./input:/input:ro
-      - ./output:/output
+      - ~/.cache/whisper-docker/huggingface:/home/ubuntu/.cache/huggingface
+      - ~/.cache/whisper-docker/torch:/home/ubuntu/.cache/torch
+      - ~/.cache/whisper-docker/speechbrain:/home/ubuntu/.cache/speechbrain
+      - ~/.cache/whisper-docker/matplotlib:/home/ubuntu/.cache/matplotlib
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_TOKEN=${HF_TOKEN:-}
+      - ANALYSIS=${ANALYSIS:-diarize,vad,emotion,classify,summarize}
+      - SUMMARY_BACKEND=${SUMMARY_BACKEND:-ollama}
+      - SUMMARY_COMPARE=${SUMMARY_COMPARE:-}
+      - SUMMARY_OLLAMA_MODEL=${SUMMARY_OLLAMA_MODEL:-llama3.1:8b}
+      - SUMMARY_SKIP_SYNTHESIS=${SUMMARY_SKIP_SYNTHESIS:-true}
+      - SUMMARY_HF_MODEL=${SUMMARY_HF_MODEL:-google/flan-t5-large}
+      - OLLAMA_URL=http://ollama:11434
     deploy:
       resources:
         limits:
-          # Limit CPU to prevent runaway processes; 4 cores is typical for RTX 3060 Ti tier
           cpus: "4"
-          # Limit memory to 12 GB (some overhead for host OS + container)
-          memory: 12G
+          memory: 24G
         reservations:
           devices:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: whisper-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ~/.cache/whisper-docker/ollama:/root/.ollama
+    environment:
+      - OLLAMA_NUM_GPU=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/bin/ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - summarize

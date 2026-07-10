@@ -191,6 +191,25 @@ def download_audio(job_id: str) -> tuple[str, Path]:
 
 
 def transcribe_docker(input_path: Path, output_dir: Path, analysis_flags: list[str]) -> None:
+    import fcntl
+
+    gpu_lock_path = os.environ.get("GPU_LOCK_FILE", "/tmp/whisper-gpu.lock")
+    lock_fd = open(gpu_lock_path, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_NB | fcntl.LOCK_EX)
+    except (IOError, OSError):
+        log.info("GPU lock busy (local batch processing?) — skipping this poll cycle")
+        lock_fd.close()
+        raise RuntimeError("GPU busy — will retry on next poll cycle")
+
+    try:
+        _transcribe_docker_inner(input_path, output_dir, analysis_flags)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+
+def _transcribe_docker_inner(input_path: Path, output_dir: Path, analysis_flags: list[str]) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     dockerfile = repo_root / "Dockerfile"
     if not dockerfile.exists():
@@ -330,7 +349,23 @@ def process_job(job: dict) -> None:
         output_dir.mkdir(mode=0o700)
 
         if CONFIG["mode"] == "docker":
-            transcribe_docker(audio_path, output_dir, analysis_flags)
+            try:
+                transcribe_docker(audio_path, output_dir, analysis_flags)
+            except RuntimeError as gpu_exc:
+                if "GPU busy" in str(gpu_exc):
+                    log.info("GPU busy — releasing job %s back to pending", job_id)
+                    try:
+                        request_with_retry(
+                            "PATCH",
+                            f"{CONFIG['api_url']}/api/jobs/{job_id}",
+                            json={"status": "pending"},
+                            headers=api_headers(),
+                            timeout=30,
+                        )
+                    except Exception:
+                        pass
+                    return
+                raise
         else:
             transcribe_direct(audio_path, output_dir)
         timer.tick("transcribe")
