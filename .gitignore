@@ -44,3 +44,4 @@ input/
 *.mp3
 *.webm
 __pycache__/
+*.log
